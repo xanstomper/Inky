@@ -1,0 +1,27 @@
+{
+  "name": "Cobalt2",
+  "bg": "#193549",
+  "fg": "#e1efff",
+  "cursor": "#1f9cf0",
+  "selection": "#0d3a58",
+  "accent": "#1f9cf0",
+  "accent_alt": "#fb94ff",
+  "palette": [
+    "#0d3a58",
+    "#ff628c",
+    "#3ad900",
+    "#ffc600",
+    "#1f9cf0",
+    "#fb94ff",
+    "#80fcff",
+    "#e1efff",
+    "#0d3a58",
+    "#ff628c",
+    "#3ad900",
+    "#ffc600",
+    "#1f9cf0",
+    "#fb94ff",
+    "#80fcff",
+    "#ffffff"
+  ]
+}

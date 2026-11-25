@@ -1,0 +1,27 @@
+{
+  "name": "Oceanic Next",
+  "bg": "#1b2b34",
+  "fg": "#c0c5ce",
+  "cursor": "#6699cc",
+  "selection": "#343d46",
+  "accent": "#6699cc",
+  "accent_alt": "#c594c5",
+  "palette": [
+    "#343d46",
+    "#ec5f67",
+    "#99c794",
+    "#fac863",
+    "#6699cc",
+    "#c594c5",
+    "#5fb3b3",
+    "#a7adba",
+    "#65737e",
+    "#ec5f67",
+    "#99c794",
+    "#fac863",
+    "#6699cc",
+    "#c594c5",
+    "#5fb3b3",
+    "#d8dee9"
+  ]
+}

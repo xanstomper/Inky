@@ -1,0 +1,27 @@
+{
+  "name": "Zenburn",
+  "bg": "#3f3f3f",
+  "fg": "#dcdccc",
+  "cursor": "#6ca0a3",
+  "selection": "#3f3f3f",
+  "accent": "#6ca0a3",
+  "accent_alt": "#dc8cc3",
+  "palette": [
+    "#3f3f3f",
+    "#cc9393",
+    "#7f9f7f",
+    "#f0dfaf",
+    "#6ca0a3",
+    "#dc8cc3",
+    "#93e0e3",
+    "#dcdccc",
+    "#709080",
+    "#dca3a3",
+    "#bfebbf",
+    "#e0cf9f",
+    "#7cb8bb",
+    "#dc8cc3",
+    "#93e0e3",
+    "#ffffff"
+  ]
+}

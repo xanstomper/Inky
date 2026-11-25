@@ -1,0 +1,15 @@
+{
+  "name": "Inky",
+  "bg": "#08090e",
+  "fg": "#d7dceb",
+  "cursor": "#8fb0ff",
+  "selection": "#263049",
+  "accent": "#8fb0ff",
+  "accent_alt": "#c9a0ff",
+  "palette": [
+    "#14161f", "#ff7a90", "#8ee3a1", "#f2cf7a",
+    "#8fb0ff", "#c9a0ff", "#89e3e3", "#cdd4e6",
+    "#4a5068", "#ff8fa3", "#a5f0b6", "#ffe08a",
+    "#a3c0ff", "#d9b6ff", "#9ef0ef", "#eef1f8"
+  ]
+}

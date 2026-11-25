@@ -1,0 +1,27 @@
+{
+  "name": "Snazzy",
+  "bg": "#282a36",
+  "fg": "#eff0eb",
+  "cursor": "#57c7ff",
+  "selection": "#282a36",
+  "accent": "#57c7ff",
+  "accent_alt": "#ff6ac1",
+  "palette": [
+    "#282a36",
+    "#ff5c57",
+    "#5af78e",
+    "#f3f99d",
+    "#57c7ff",
+    "#ff6ac1",
+    "#9aedfe",
+    "#f1f1f0",
+    "#686868",
+    "#ff5c57",
+    "#5af78e",
+    "#f3f99d",
+    "#57c7ff",
+    "#ff6ac1",
+    "#9aedfe",
+    "#f1f1f0"
+  ]
+}

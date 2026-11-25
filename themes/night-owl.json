@@ -1,0 +1,27 @@
+{
+  "name": "Night Owl",
+  "bg": "#011627",
+  "fg": "#d6deeb",
+  "cursor": "#82aaff",
+  "selection": "#011627",
+  "accent": "#82aaff",
+  "accent_alt": "#c792ea",
+  "palette": [
+    "#011627",
+    "#ef5350",
+    "#22da6e",
+    "#addb67",
+    "#82aaff",
+    "#c792ea",
+    "#21c7a8",
+    "#ffffff",
+    "#575656",
+    "#ef5350",
+    "#22da6e",
+    "#ffeb95",
+    "#82aaff",
+    "#c792ea",
+    "#7fdbca",
+    "#ffffff"
+  ]
+}

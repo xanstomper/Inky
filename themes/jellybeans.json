@@ -1,0 +1,27 @@
+{
+  "name": "Jellybeans",
+  "bg": "#151515",
+  "fg": "#e8e8d3",
+  "cursor": "#8197bf",
+  "selection": "#929292",
+  "accent": "#8197bf",
+  "accent_alt": "#8787af",
+  "palette": [
+    "#929292",
+    "#cf6a4c",
+    "#99ad6a",
+    "#fad07a",
+    "#8197bf",
+    "#8787af",
+    "#668799",
+    "#e8e8d3",
+    "#5f5f5f",
+    "#ffb964",
+    "#99ad6a",
+    "#fad07a",
+    "#8197bf",
+    "#8787af",
+    "#668799",
+    "#ffffff"
+  ]
+}

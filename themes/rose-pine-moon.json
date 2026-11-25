@@ -1,0 +1,27 @@
+{
+  "name": "Ros\u00e9 Pine Moon",
+  "bg": "#232136",
+  "fg": "#e0def4",
+  "cursor": "#9ccfd8",
+  "selection": "#393552",
+  "accent": "#9ccfd8",
+  "accent_alt": "#c4a7e7",
+  "palette": [
+    "#393552",
+    "#eb6f92",
+    "#3e8fb0",
+    "#f6c177",
+    "#9ccfd8",
+    "#c4a7e7",
+    "#ea9a97",
+    "#e0def4",
+    "#6e6a86",
+    "#eb6f92",
+    "#3e8fb0",
+    "#f6c177",
+    "#9ccfd8",
+    "#c4a7e7",
+    "#ea9a97",
+    "#e0def4"
+  ]
+}

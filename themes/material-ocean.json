@@ -1,0 +1,27 @@
+{
+  "name": "Material Ocean",
+  "bg": "#0f111a",
+  "fg": "#8f93a2",
+  "cursor": "#82aaff",
+  "selection": "#546e7a",
+  "accent": "#82aaff",
+  "accent_alt": "#c792ea",
+  "palette": [
+    "#546e7a",
+    "#f07178",
+    "#c3e88d",
+    "#ffcb6b",
+    "#82aaff",
+    "#c792ea",
+    "#89ddff",
+    "#eeffff",
+    "#546e7a",
+    "#ff5370",
+    "#c3e88d",
+    "#ffcb6b",
+    "#82aaff",
+    "#c792ea",
+    "#89ddff",
+    "#ffffff"
+  ]
+}

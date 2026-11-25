@@ -1,0 +1,15 @@
+{
+  "name": "One Dark",
+  "bg": "#282c34",
+  "fg": "#abb2bf",
+  "cursor": "#abb2bf",
+  "selection": "#3e4451",
+  "accent": "#61afef",
+  "accent_alt": "#c678dd",
+  "palette": [
+    "#282c34", "#e06c75", "#98c379", "#e5c07b",
+    "#61afef", "#c678dd", "#56b6c2", "#abb2bf",
+    "#5c6370", "#e06c75", "#98c379", "#e5c07b",
+    "#61afef", "#c678dd", "#56b6c2", "#ffffff"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "Tomorrow Night Blue",
+  "bg": "#002451",
+  "fg": "#ffffff",
+  "cursor": "#bbdaff",
+  "selection": "#00346e",
+  "accent": "#bbdaff",
+  "accent_alt": "#ebbbff",
+  "palette": [
+    "#00346e",
+    "#ff9da4",
+    "#d1f1a9",
+    "#ffeead",
+    "#bbdaff",
+    "#ebbbff",
+    "#99ffff",
+    "#ffffff",
+    "#003f8e",
+    "#ff9da4",
+    "#d1f1a9",
+    "#ffeead",
+    "#bbdaff",
+    "#ebbbff",
+    "#99ffff",
+    "#ffffff"
+  ]
+}

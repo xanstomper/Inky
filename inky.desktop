@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Inky
+GenericName=Terminal
+Comment=Ink-fast terminal with persistent sessions and AI agent awareness
+Exec=@ROOT@/bin/inky
+Icon=inky
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=terminal;shell;tmux;agent;ai;coding;
+StartupNotify=true
+StartupWMClass=Inky

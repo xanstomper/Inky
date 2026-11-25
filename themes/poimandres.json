@@ -1,0 +1,27 @@
+{
+  "name": "Poimandres",
+  "bg": "#1b1e28",
+  "fg": "#a6accd",
+  "cursor": "#89ddff",
+  "selection": "#1b1e28",
+  "accent": "#89ddff",
+  "accent_alt": "#fcc5e9",
+  "palette": [
+    "#1b1e28",
+    "#d0679d",
+    "#5de4c7",
+    "#fffac2",
+    "#89ddff",
+    "#fcc5e9",
+    "#add7ff",
+    "#a6accd",
+    "#4c5374",
+    "#d0679d",
+    "#5de4c7",
+    "#fffac2",
+    "#89ddff",
+    "#fcc5e9",
+    "#add7ff",
+    "#ffffff"
+  ]
+}

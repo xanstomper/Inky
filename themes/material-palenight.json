@@ -1,0 +1,27 @@
+{
+  "name": "Material Palenight",
+  "bg": "#292d3e",
+  "fg": "#a6accd",
+  "cursor": "#82aaff",
+  "selection": "#444267",
+  "accent": "#82aaff",
+  "accent_alt": "#c792ea",
+  "palette": [
+    "#444267",
+    "#f07178",
+    "#c3e88d",
+    "#ffcb6b",
+    "#82aaff",
+    "#c792ea",
+    "#89ddff",
+    "#d0d0d0",
+    "#676e95",
+    "#ff5370",
+    "#c3e88d",
+    "#ffcb6b",
+    "#82aaff",
+    "#c792ea",
+    "#89ddff",
+    "#ffffff"
+  ]
+}
