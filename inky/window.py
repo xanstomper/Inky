@@ -271,12 +271,6 @@ class InkyWindow(Gtk.Window):
         self.search_button = self._icon_button("edit-find-symbolic",
                                               "Search  (Ctrl+Shift+F)", self.open_search)
         header.pack_end(self.search_button)
-        self.theme_button = Gtk.Button(label="◐")
-        self.theme_button.get_style_context().add_class("toolbutton")
-        self.theme_button.set_relief(Gtk.ReliefStyle.NONE)
-        self.theme_button.set_tooltip_text(f"Themes  (Ctrl+Shift+P)  ·  {len(self.themes)} available")
-        self.theme_button.connect("clicked", lambda *_: self.open_theme_picker())
-        header.pack_end(self.theme_button)
         self.menu_button = self._icon_button("open-menu-symbolic", "Menu",
                                              self.open_main_menu)
         header.pack_end(self.menu_button)
@@ -790,7 +784,7 @@ class InkyWindow(Gtk.Window):
         """Strip the chrome, keep the grid. The shortcut still gets you out."""
         self.zen = not self.zen
         self.tabrow.set_visible(not self.zen)
-        for widget in (self.new_button, self.search_button, self.theme_button):
+        for widget in (self.new_button, self.search_button):
             widget.set_visible(not self.zen)
         self.statusbar.set_visible(self.show_statusbar and not self.zen)
         self.toast.show_message(
@@ -1076,9 +1070,6 @@ class InkyWindow(Gtk.Window):
         for tab in self.tabs:
             tab.terminal.apply_theme(theme)
             tab._visual_key = None
-        self.theme_button.set_tooltip_text(
-            f"Themes  (Ctrl+Shift+P)  ·  {len(self.themes)} available"
-        )
         settings = getattr(self, "_settings", None)
         if settings is not None:
             settings.set_theme(theme)

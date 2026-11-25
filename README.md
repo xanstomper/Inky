@@ -139,7 +139,7 @@ desktop entry. Optional but recommended: `psutil` (agent detection), `xclip` or 
   frame (`window.padding` adds breathing room).
 - Full-width tab row: equal-width tabs, `✕` per tab, accent underline on the active one.
   Wheel over the row switches tabs; `Ctrl+Shift+PageUp/PageDown` reorders them.
-- Title bar: `+` new tab, centered `tab · folder`, `◐` themes, search, `☰` menu.
+- Title bar: `+` new tab, centered `tab · folder`, search, `☰` menu (themes live in the menu).
 - GNOME Terminal naming: a tab is named after the running program (`opencode`, `nvim`,
   `ssh`), and after its folder when it is only a shell. Renaming pins the name.
 - No status bar by default — cwd, branch and agent state live in the tab tooltip, the
@@ -174,7 +174,7 @@ desktop entry. Optional but recommended: `psutil` (agent detection), `xclip` or 
   Zenburn, Iceberg, Spacegray, Cobalt2, Dark+, Flexoki, Jellybeans, Oxocarbon, Poimandres,
   Relaxed, Snazzy, Sonokai, Ubuntu, Vesper — plus any JSON you drop in
   `~/.config/inky/themes/`.
-- The `◐` button (or `☰ → Themes…`, or `Ctrl+Shift+P`) opens a searchable theme list with
+- `☰ → Themes…` (or `Ctrl+Shift+P`) opens a searchable theme list with
   a palette swatch per theme. Click once: the window recolours live and the choice is
   remembered. There is no giant submenu to hunt through.
 
