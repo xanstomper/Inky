@@ -10,6 +10,7 @@ import sys
 
 from . import __version__
 from . import config
+from .profiles import load_profiles
 from .theme import load_themes, pick
 
 
@@ -59,6 +60,114 @@ def _print_themes() -> int:
     for slug, theme in themes.items():
         marker = "●" if slug == active else " "
         print(f" {marker} {slug:<18} {theme.name}")
+    return 0
+
+
+def _print_profiles() -> int:
+    profiles = load_profiles()
+    active = config.load_config().get("profile") or ""
+    if not profiles:
+        print("No profiles yet — Settings → Profiles, or `inky open --tab`, makes one.")
+        return 0
+    for slug, profile in profiles.items():
+        marker = "●" if slug == active else " "
+        print(f" {marker} {slug:<18} {profile.name:<22} {profile.summary()}")
+    return 0
+
+
+def _set_default_profile(arg: str) -> int:
+    cfg = config.load_config()
+    if not arg:
+        current = cfg.get("profile") or ""
+        print(f"Default profile: {current or '(window settings)'}")
+        return 0
+    if arg in ("none", "default"):
+        cfg["profile"] = ""
+        config.save_config(cfg)
+        print("Default profile cleared.")
+        return 0
+    profiles = load_profiles()
+    if arg not in profiles:
+        print(f"Unknown profile {arg!r}. Try: inky profiles")
+        return 1
+    cfg["profile"] = arg
+    config.save_config(cfg)
+    print(f"Default profile set to {profiles[arg].name} ({arg})")
+    return 0
+
+
+def _resolve_session(name: str, names: list[str]) -> str:
+    if name in names:
+        return name
+    if f"inky-{name}" in names:
+        return f"inky-{name}"
+    matches = [candidate for candidate in names if candidate.startswith(name)]
+    return matches[0] if len(matches) == 1 else ""
+
+
+def _cli_open(args: list[str]) -> int:
+    """``inky open`` — the gnome-terminal --tab/--working-directory equivalent.
+
+    ``--tab`` queues the request for the running window, so a script, a tmux
+    binding or an agent can ask for a tab without a display of its own.
+    """
+    parser = argparse.ArgumentParser(
+        prog="inky open",
+        description="Open an Inky window, or a tab in the running one.",
+    )
+    parser.add_argument("--profile", "-p", metavar="SLUG", help="profile to launch with")
+    parser.add_argument("--cwd", "-C", metavar="DIR", help="working directory")
+    parser.add_argument("--command", "-e", metavar="CMD",
+                        help="command to run instead of the shell")
+    parser.add_argument("--title", "-t", metavar="TITLE", help="tab title")
+    parser.add_argument("--tab", action="store_true",
+                        help="open in the running Inky window instead of a new one")
+    options = parser.parse_args(args)
+
+    if options.profile and options.profile not in load_profiles():
+        print(f"No such profile: {options.profile}. Try: inky profiles", file=sys.stderr)
+        return 1
+    cwd = ""
+    if options.cwd:
+        cwd = os.path.abspath(os.path.expanduser(options.cwd))
+        if not os.path.isdir(cwd):
+            print(f"No such directory: {cwd}", file=sys.stderr)
+            return 1
+    if options.tab:
+        config.request_tab(options.profile or "", cwd,
+                           options.command or "", options.title or "")
+        suffix = f" with profile {options.profile}" if options.profile else ""
+        print(f"Queued a tab{suffix} in the running Inky window.")
+        return 0
+    return _run_gui(argparse.Namespace(
+        attach=None, title=options.title, theme=None,
+        profile=options.profile, cwd=cwd or None, command=options.command,
+    ))
+
+
+def _cli_send(args: list[str]) -> int:
+    """``inky send`` — type into a live session without a GUI."""
+    parser = argparse.ArgumentParser(
+        prog="inky send",
+        description="Send text to a running Inky session as a bracketed paste.",
+    )
+    parser.add_argument("session", help="session name (inky-abcd1234 or abcd1234)")
+    parser.add_argument("text", nargs="+", help="text to send")
+    parser.add_argument("--no-enter", action="store_true", help="do not press Enter")
+    options = parser.parse_args(args)
+
+    from .tmux import Tmux
+
+    tmux = Tmux()
+    names = [row["name"] for row in tmux.sessions() if row["name"].startswith("inky-")]
+    target = _resolve_session(options.session, names)
+    if not target:
+        print(f"No such session: {options.session}", file=sys.stderr)
+        if names:
+            print("Running: " + ", ".join(names), file=sys.stderr)
+        return 1
+    tmux.send_text(target, " ".join(options.text), submit=not options.no_enter)
+    print(f"Sent to {target}.")
     return 0
 
 
@@ -169,6 +278,7 @@ def _selftest() -> int:
     _require_gui()
     from gi.repository import GLib, Gtk
 
+    from . import profiles as profile_store
     from .tmux import Tmux
     from .window import InkyWindow
 
@@ -211,7 +321,7 @@ def _selftest() -> int:
         settings = SettingsDialog(window, window.cfg, window.theme, window.themes)
         maker = ThemeMaker(window, window.themes, window.theme.slug)
         palette_ok = len(maker._collect()["palette"]) == 16
-        dialogs_ok = settings.notebook.get_n_pages() == 3 and palette_ok
+        dialogs_ok = settings.notebook.get_n_pages() == 4 and palette_ok
         settings.destroy()
         maker.destroy()
         window.toggle_zen()
@@ -219,14 +329,47 @@ def _selftest() -> int:
         window.toggle_zen()
         zen_ok = zen_ok and window.tabrow.get_visible()
 
+        # Profiles: a snapshot writes a portable file, and a tab opened with it
+        # takes the profile's font and palette instead of the window's.
+        profile = profile_store.from_tab(
+            "Selftest", {"family": "Monospace", "size": 15.0, "line_height": 1.2},
+            themes[1], "/tmp", "",
+        )
+        saved_path = profile_store.save_profile(profile)
+        window.profiles = profile_store.load_profiles()
+        prof_tab = window.add_tab(profile=profile.slug)
+        profile_ok = bool(
+            prof_tab is not None and prof_tab.profile is not None
+            and abs(float(prof_tab.terminal.font().get("size", 0)) - 15.0) < 0.01
+            and prof_tab.terminal.theme.slug == themes[1]
+        )
+        link_ok = bool(
+            prof_tab is not None and prof_tab.terminal.link_tag >= 0
+            and prof_tab.terminal._is_uri("https://example.com/a?b=1")
+            and not prof_tab.terminal._is_uri("rm -rf /")
+            and not prof_tab.terminal.open_uri("javascript:alert(1)")
+        )
+
+        # A queued CLI request must become a tab immediately.
+        config.request_tab(profile=profile.slug, cwd="/tmp", title="queued")
+        queued_before = len(window.tabs)
+        window._drain_requests()
+        queue_ok = len(window.tabs) == queued_before + 1
+
+        profile_store.delete_profile(profile.slug)
+        window.profiles = profile_store.load_profiles()
+        profile_ok = profile_ok and not saved_path.exists()
+
         result["ok"] = (len(window.tabs) >= 3 and alive and transcript_ok
                         and len(themes) >= 5 and naming_ok and order_ok
-                        and dialogs_ok and zen_ok)
+                        and dialogs_ok and zen_ok and profile_ok and queue_ok
+                        and link_ok)
         print(
             f"SELFTEST {'OK' if result['ok'] else 'FAILED'} "
             f"tabs={len(window.tabs)} themes={len(themes)} alive={alive} "
             f"transcript={transcript_ok} naming={naming_ok} order={order_ok} "
-            f"dialogs={dialogs_ok} zen={zen_ok} titles={named}"
+            f"dialogs={dialogs_ok} zen={zen_ok} profile={profile_ok} "
+            f"queue={queue_ok} links={link_ok} titles={named}"
         )
         tmux = Tmux()
         for tab in window.tabs:
@@ -241,16 +384,24 @@ def _selftest() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    # These two take their own flags, so they parse before the shared parser.
+    if argv and argv[0] == "open":
+        return _cli_open(argv[1:])
+    if argv and argv[0] == "send":
+        return _cli_send(argv[1:])
     parser = argparse.ArgumentParser(
         prog="inky",
         description="Inky — ink-fast terminal with persistent sessions and agent superpowers.",
     )
     parser.add_argument("command", nargs="?", default="",
-                        help="ls | themes | theme <slug> | kill <session> | doctor | attach <session>")
+                        help="ls | profiles | profile [slug] | themes | theme <slug> | "
+                             "kill <session> | doctor | attach <session> | open | send")
     parser.add_argument("args", nargs="*", help="arguments for the command")
     parser.add_argument("--attach", metavar="SESSION", help="open a window attached to a session")
     parser.add_argument("--title", help="title for the attached tab")
     parser.add_argument("--theme", help="theme slug for this window")
+    parser.add_argument("--profile", metavar="SLUG",
+                        help="profile to launch this window with")
     parser.add_argument("--selftest", action="store_true", help="run an internal smoke test")
     parser.add_argument("--version", action="version", version=f"Inky {__version__}")
     options = parser.parse_args(argv)
@@ -267,6 +418,10 @@ def main(argv: list[str] | None = None) -> int:
             print("usage: inky theme <slug>")
             return 2
         return _set_theme(options.args[0])
+    if command in ("profiles", "profile-list"):
+        return _print_profiles()
+    if command == "profile":
+        return _set_default_profile(options.args[0] if options.args else "")
     if command == "kill":
         return _kill(options.args)
     if command == "doctor":
@@ -316,7 +471,10 @@ def _run_gui(options) -> int:
         cfg = config.load_config()
         state = config.State()
         window = InkyWindow(cfg, state, attach_session=options.attach,
-                            attach_title=options.title, theme_slug=options.theme)
+                            attach_title=options.title, theme_slug=options.theme,
+                            profile=getattr(options, "profile", None),
+                            start_cwd=getattr(options, "cwd", None),
+                            start_command=getattr(options, "command", None))
         window.show_all()
         window.present()
         Gtk.main()

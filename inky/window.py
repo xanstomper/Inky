@@ -15,6 +15,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from . import config  # noqa: E402
+from . import profiles as profile_store  # noqa: E402
 from .agents import AgentHit, available_agents, scan  # noqa: E402
 from .composer import Composer  # noqa: E402
 from .css import build_css  # noqa: E402
@@ -27,6 +28,14 @@ from .util import human_seconds, slugify, timestamp  # noqa: E402
 from .widgets import SearchBar, ThemePicker, Toast  # noqa: E402
 
 HOME = str(Path.home())
+
+# Programs that are just a prompt. Closing a tab running one of these is not
+# worth a dialog; closing a tab mid-build is.
+SHELLS = {"bash", "zsh", "sh", "dash", "fish", "ksh", "tcsh", "csh",
+          "tmux", "tmux: client", "login"}
+
+# ``add_tab(profile=...)`` unset means "the window's default profile".
+_DEFAULT_PROFILE = object()
 
 
 def _pointer() -> Gdk.Cursor | None:
@@ -57,6 +66,7 @@ class Tab:
         self.terminal = terminal
         self.title = title
         self.auto_title = auto_title
+        self.profile: profile_store.Profile | None = None
         self.agent: AgentHit | None = None
         self.agent_seen_at = 0.0
         self.done = False
@@ -197,23 +207,35 @@ class Tab:
 
     def _tooltip(self) -> str:
         where = self.window._display_cwd(self.cwd) if self.cwd else self.session
+        bits = [self.profile.name] if self.profile is not None else []
         if self.agent:
             state = "working" if self.working() else "waiting"
-            return f"{self.agent.name} · {state} · {where}"
-        if self.command:
-            return f"{self.command} · {where}"
-        return f"shell · {where}"
+            bits += [self.agent.name, state]
+        elif self.command:
+            bits.append(self.command)
+        else:
+            bits.append("shell")
+        bits.append(where)
+        return " · ".join(bits)
 
 
 class InkyWindow(Gtk.Window):
     def __init__(self, cfg: dict, state, attach_session: str | None = None,
-                 attach_title: str | None = None, theme_slug: str | None = None) -> None:
+                 attach_title: str | None = None, theme_slug: str | None = None,
+                 profile: str | None = None, start_cwd: str | None = None,
+                 start_command: str | None = None) -> None:
         super().__init__()
         self.cfg = cfg
         self.state = state
         self.tmux = Tmux()
         self.themes = load_themes()
+        self.profiles = profile_store.load_profiles()
         self.theme: Theme = pick(self.themes, theme_slug or cfg.get("theme"))
+        # `inky open --cwd/--command/--profile` means one fresh tab, not a
+        # restore of the last layout.
+        self.start_profile = profile
+        self.start_cwd = start_cwd
+        self.start_command = start_command
         self.tabs: list[Tab] = []
         self._css_provider = None
         self._status_cache: dict[str, str] = {}
@@ -376,6 +398,12 @@ class InkyWindow(Gtk.Window):
                          restored=True)
             return
 
+        if self.start_cwd or self.start_command or self.start_profile is not None:
+            self.add_tab(cwd=self.start_cwd, command=self.start_command,
+                         profile=(self.start_profile if self.start_profile is not None
+                                  else _DEFAULT_PROFILE))
+            return
+
         restored = 0
         window_state = self.state.window()
         for entry in window_state.get("tabs", []):
@@ -385,7 +413,8 @@ class InkyWindow(Gtk.Window):
             if not name or not self.tmux.has_session(name):
                 continue
             self.add_tab(session=name, title=entry.get("title"), restored=True,
-                         auto_title=bool(entry.get("auto", True)))
+                         auto_title=bool(entry.get("auto", True)),
+                         profile=entry.get("profile") or "")
             restored += 1
         if restored:
             self.activate(min(int(window_state.get("active", 0)), len(self.tabs) - 1))
@@ -394,8 +423,17 @@ class InkyWindow(Gtk.Window):
 
     def add_tab(self, cwd: str | None = None, command: str | None = None,
                 title: str | None = None, session: str | None = None,
-                restored: bool = False, auto_title: bool | None = None) -> Tab | None:
-        cwd = cwd or self._default_cwd()
+                restored: bool = False, auto_title: bool | None = None,
+                profile=_DEFAULT_PROFILE) -> Tab | None:
+        slug = ((self.cfg.get("profile") or "") if profile is _DEFAULT_PROFILE
+                else (profile or ""))
+        bundle = self.profiles.get(slug) if slug else None
+        cwd = cwd or (bundle.start_cwd(self._default_cwd()) if bundle
+                      else self._default_cwd())
+        # A profile or a launcher command is typed into the shell rather than
+        # made the session's own process: that keeps tab naming, agent
+        # detection and the exit paths working exactly as they do normally.
+        startup = command or (bundle.command if bundle else "")
         session = session or self.tmux.new_id()
         if not restored:
             try:
@@ -404,11 +442,15 @@ class InkyWindow(Gtk.Window):
                 self.toast.show_message(f"Could not start session: {exc}")
                 return None
 
-        terminal = InkyTerminal(session, self.cfg, self.theme, self.tmux, cwd=cwd)
+        theme = (pick(self.themes, bundle.theme)
+                 if bundle is not None and bundle.theme else self.theme)
+        terminal = InkyTerminal(session, self.cfg, theme, self.tmux, cwd=cwd,
+                                profile=bundle)
         display = title or self._title_for_cwd(cwd)
         auto = auto_title if auto_title is not None else title is None
         tab = Tab(self, session, terminal, display, auto_title=auto)
         tab.cwd = cwd
+        tab.profile = bundle
         tab.terminal.connect("exited", lambda _t, status, tab=tab: self._on_terminal_exit(tab, status))
         tab.terminal.term.connect("button-press-event", self._on_terminal_click)
 
@@ -422,9 +464,11 @@ class InkyWindow(Gtk.Window):
         self._sync_tabstrip()
         self.activate(len(self.tabs) - 1)
 
-        self.state.remember_session(session, title=tab.title, cwd=cwd, created=time.time())
-        if command:
-            GLib.timeout_add(320, self._send_after_spawn, session, command)
+        self.state.remember_session(session, title=tab.title, cwd=cwd,
+                                    created=time.time(),
+                                    profile=bundle.slug if bundle else "")
+        if startup:
+            GLib.timeout_add(320, self._send_after_spawn, session, startup)
         self._save_window()
         return tab
 
@@ -472,19 +516,24 @@ class InkyWindow(Gtk.Window):
         if (confirm and kill and tab.agent is not None
                 and self.cfg["behavior"].get("confirm_agent_close", True)):
             agent = tab.agent
-            dialog = Gtk.MessageDialog(
-                transient_for=self, flags=Gtk.DialogFlags.MODAL,
-                message_type=Gtk.MessageType.WARNING,
-                buttons=Gtk.ButtonsType.OK_CANCEL,
-                text=f"{agent.name} is running in “{tab.title}”.",
+            response = self._ask_close(
+                f"{agent.name} is running in “{tab.title}”.",
+                "Closing this tab stops the agent. Detach it instead to keep it "
+                "running in its own window.",
             )
-            dialog.format_secondary_text(
-                "Closing this tab stops the agent. Detach it instead to keep it running "
-                "in its own window."
+            if response == 42:
+                self.detach_tab(tab)
+                return
+            if response != Gtk.ResponseType.OK:
+                return
+        elif (confirm and kill and self.cfg["behavior"].get("confirm_process_close", True)
+                and self._busy_command(tab)):
+            busy = self._busy_command(tab)
+            response = self._ask_close(
+                f"“{busy}” is still running in “{tab.title}”.",
+                "Closing this tab ends it. Detach it instead to keep the process "
+                "in its own window.",
             )
-            dialog.add_button("Detach window", 42)
-            response = dialog.run()
-            dialog.destroy()
             if response == 42:
                 self.detach_tab(tab)
                 return
@@ -508,6 +557,26 @@ class InkyWindow(Gtk.Window):
         if not silent:
             self.toast.show_message("Tab closed" if kill else "Tab detached")
         self._save_window()
+
+    def _ask_close(self, headline: str, secondary: str) -> int:
+        dialog = Gtk.MessageDialog(
+            transient_for=self, flags=Gtk.DialogFlags.MODAL,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.OK_CANCEL, text=headline,
+        )
+        dialog.format_secondary_text(secondary)
+        dialog.add_button("Detach window", 42)
+        response = dialog.run()
+        dialog.destroy()
+        return response
+
+    @staticmethod
+    def _busy_command(tab: "Tab") -> str:
+        """The foreground program, or "" when the tab is only a shell prompt."""
+        name = (tab.command or "").strip()
+        if not name:
+            return ""
+        return "" if name.split()[0] in SHELLS else name
 
     def move_tab(self, tab: "Tab", delta: int) -> None:
         """Slide a tab along the bar; the active tab follows it."""
@@ -596,6 +665,9 @@ class InkyWindow(Gtk.Window):
         menu.append(self._menu_item("Rename tab…    F2", lambda: self.rename_tab(tab)))
         menu.append(self._menu_item("New tab in this folder    ⌃⇧T",
                                     lambda: self.add_tab(cwd=tab.cwd)))
+        profiles_item = self.profile_menu_item()
+        if profiles_item is not None:
+            menu.append(profiles_item)
         menu.append(self._menu_item("Duplicate tab", lambda: self.duplicate_tab(tab)))
         menu.append(self._menu_item("Move tab left    ⌃⇧⇞", lambda: self.move_tab(tab, -1)))
         menu.append(self._menu_item("Move tab right    ⌃⇧⇟", lambda: self.move_tab(tab, 1)))
@@ -637,6 +709,20 @@ class InkyWindow(Gtk.Window):
     def _menu_item(self, label: str, callback) -> Gtk.MenuItem:
         item = Gtk.MenuItem(label=label)
         item.connect("activate", lambda *_: callback())
+        return item
+
+    def profile_menu_item(self) -> Gtk.MenuItem | None:
+        """New-tab-with-profile, the way GNOME Terminal lists profiles in its menu."""
+        if not self.profiles:
+            return None
+        item = Gtk.MenuItem(label="New tab with profile")
+        submenu = Gtk.Menu()
+        for slug, profile in self.profiles.items():
+            submenu.append(self._menu_item(
+                profile.name, lambda slug=slug: self.add_tab(profile=slug)))
+        submenu.append(Gtk.SeparatorMenuItem())
+        submenu.append(self._menu_item("Manage profiles…", self.open_settings_profiles))
+        item.set_submenu(submenu)
         return item
 
     def theme_menu_item(self) -> Gtk.MenuItem:
@@ -696,7 +782,8 @@ class InkyWindow(Gtk.Window):
             return
         dialog = SettingsDialog(self, self.cfg, self.theme, self.themes,
                                 self.apply_settings, self.open_theme_picker,
-                                self.open_theme_maker, self._settings_action)
+                                self.open_theme_maker, self._settings_action,
+                                profiles=self.profiles)
         dialog.connect("response", lambda d, _r: d.destroy())
         dialog.connect("destroy", lambda *_: setattr(self, "_settings", None))
         dialog.present()
@@ -728,7 +815,7 @@ class InkyWindow(Gtk.Window):
         interval = float(self.cfg["behavior"].get("poll_interval", 1.4))
         self._poll_id = GLib.timeout_add(max(300, int(interval * 1000)), self._poll)
 
-    def _settings_action(self, kind: str) -> None:
+    def _settings_action(self, kind: str, payload: str | None = None) -> None:
         if kind == "zen":
             self.toggle_zen()
         elif kind == "broadcast":
@@ -737,18 +824,84 @@ class InkyWindow(Gtk.Window):
             self.shuffle_theme()
         elif kind == "folder":
             self._open_themes_folder()
+        elif kind == "profiles-folder":
+            self._open_folder(config.PROFILES_DIR)
+        elif kind == "profile-open" and payload:
+            self.add_tab(profile=payload)
+        elif kind == "profile-delete" and payload:
+            if profile_store.delete_profile(payload):
+                self._reload_profiles()
+                self.toast.show_message(f"Profile deleted · {payload}")
+        elif kind == "profile-snapshot":
+            self.snapshot_profile()
 
-    def _open_themes_folder(self) -> None:
+    def _reload_profiles(self) -> None:
+        self.profiles = profile_store.load_profiles()
+        settings = getattr(self, "_settings", None)
+        if settings is not None:
+            settings.refresh_profiles(self.profiles)
+
+    def open_settings_profiles(self) -> None:
+        self.open_settings()
+        settings = getattr(self, "_settings", None)
+        if settings is not None:
+            settings.show_page("profiles")
+
+    def snapshot_profile(self) -> None:
+        """Save the current tab's font, palette and command as a profile file."""
+        tab = self.current_tab()
+        if tab is None:
+            return
+        dialog = Gtk.Dialog(title="New profile", transient_for=self)
+        dialog.set_modal(True)
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL,
+                           "Save profile", Gtk.ResponseType.OK)
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        dialog.set_default_size(380, -1)
+        entry = Gtk.Entry()
+        entry.set_text(tab.title)
+        entry.set_activates_default(True)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(entry, f"set_margin_{side}")(12)
+        font = tab.terminal.font()
+        note = Gtk.Label(
+            label=f"{font.get('family', '')} {float(font.get('size', 0)):.1f} · "
+                  f"{tab.terminal.theme.name} · {self._display_cwd(tab.cwd)}",
+            xalign=0.0,
+        )
+        note.get_style_context().add_class("settings-help")
+        note.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+        for side in ("start", "end", "bottom"):
+            getattr(note, f"set_margin_{side}")(12)
+        area = dialog.get_content_area()
+        area.add(entry)
+        area.add(note)
+        dialog.show_all()
+        if dialog.run() == Gtk.ResponseType.OK:
+            name = entry.get_text().strip() or tab.title
+            profile = profile_store.from_tab(
+                name, font, tab.terminal.theme.slug, tab.cwd,
+                self._busy_command(tab), self.profiles,
+            )
+            path = profile_store.save_profile(profile)
+            self._reload_profiles()
+            self.toast.show_message(f"Profile saved · {path.name}")
+        dialog.destroy()
+        self._focus_terminal()
+
+    def _open_folder(self, folder: Path) -> None:
         try:
-            config.USER_THEMES.mkdir(parents=True, exist_ok=True)
-            Gtk.show_uri(None, config.USER_THEMES.as_uri(),
-                         Gtk.get_current_event_time())
+            folder.mkdir(parents=True, exist_ok=True)
+            Gtk.show_uri(None, folder.as_uri(), Gtk.get_current_event_time())
         except Exception:
             try:
-                subprocess.Popen(["xdg-open", str(config.USER_THEMES)],
+                subprocess.Popen(["xdg-open", str(folder)],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
-                self.toast.show_message(str(config.USER_THEMES))
+                self.toast.show_message(str(folder))
+
+    def _open_themes_folder(self) -> None:
+        self._open_folder(config.USER_THEMES)
 
     def toggle_zen(self) -> None:
         """Strip the chrome, keep the grid. The shortcut still gets you out."""
@@ -789,6 +942,9 @@ class InkyWindow(Gtk.Window):
     def open_main_menu(self) -> None:
         menu = Gtk.Menu()
         menu.append(self._menu_item("New tab    ⌃⇧T", self.add_tab))
+        profiles_item = self.profile_menu_item()
+        if profiles_item is not None:
+            menu.append(profiles_item)
         menu.append(self._menu_item("New window    ⌃⇧N", self.new_window))
         menu.append(self._menu_item("Detach tab    ⌃⇧D", self.detach_tab))
         menu.append(Gtk.SeparatorMenuItem())
@@ -961,6 +1117,15 @@ class InkyWindow(Gtk.Window):
                 "run": lambda agent=agent: self.launch_agent(agent),
             })
 
+        for slug, profile in self.profiles.items():
+            items.append({
+                "category": "Profiles", "label": f"New tab · {profile.name}",
+                "sub": profile.summary(), "glyph": "▤",
+                "keywords": f"profile {slug} {profile.command} {profile.cwd}",
+                "hint": "default" if slug == (self.cfg.get("profile") or "") else "",
+                "run": lambda slug=slug: self.add_tab(profile=slug),
+            })
+
         for session in self._orphan_sessions():
             items.append({
                 "category": "Sessions", "label": session["title"],
@@ -1037,12 +1202,18 @@ class InkyWindow(Gtk.Window):
         # Markup carries theme colours, so the cached strings are stale now.
         self._status_cache.clear()
         for tab in self.tabs:
-            tab.terminal.apply_theme(theme)
+            tab.terminal.apply_theme(self._theme_for(tab))
             tab._visual_key = None
         settings = getattr(self, "_settings", None)
         if settings is not None:
             settings.set_theme(theme)
         self.refresh_status()
+
+    def _theme_for(self, tab: Tab) -> Theme:
+        """A tab launched with a profile keeps that profile's palette."""
+        if tab.profile is not None and tab.profile.theme:
+            return pick(self.themes, tab.profile.theme)
+        return self.theme
 
     def cycle_theme(self, delta: int = 1) -> None:
         slugs = list(self.themes)
@@ -1107,9 +1278,23 @@ class InkyWindow(Gtk.Window):
                          self.header_title.set_tooltip_text)
 
     # -- runtime loop --------------------------------------------------
+    def _drain_requests(self) -> None:
+        """Open tabs queued by ``inky open --tab`` from a script or an agent."""
+        for request in config.take_requests():
+            kwargs: dict = {}
+            if request.get("profile"):
+                kwargs["profile"] = request["profile"]
+            for key in ("cwd", "command", "title"):
+                if request.get(key):
+                    kwargs[key] = request[key]
+            tab = self.add_tab(**kwargs)
+            if tab is not None:
+                self.toast.show_message(f"Opened “{tab.title}” from the command line")
+
     def _poll(self) -> bool:
         if self._closing or not self.tabs:
             return True
+        self._drain_requests()
         now = time.time()
         panes = self.tmux.panes()
         touched = False
@@ -1267,7 +1452,8 @@ class InkyWindow(Gtk.Window):
     def _save_window(self) -> None:
         try:
             tabs = [{"session": tab.session, "title": tab.title,
-                     "cwd": tab.cwd, "auto": tab.auto_title}
+                     "cwd": tab.cwd, "auto": tab.auto_title,
+                     "profile": tab.profile.slug if tab.profile else ""}
                     for tab in self.tabs]
             self.state.save_window(tabs, self.current_index(), self._geometry())
         except Exception:

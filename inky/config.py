@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import json
 import os
+import time
+import uuid
 from pathlib import Path
 
 HOME = Path.home()
@@ -22,13 +24,20 @@ CACHE_DIR = _env_path("INKY_CACHE_DIR", HOME / ".cache" / "inky")
 TRANSCRIPT_DIR = _env_path("INKY_TRANSCRIPTS", HOME / "inky-transcripts")
 BUILTIN_THEMES = ROOT / "themes"
 USER_THEMES = CONFIG_DIR / "themes"
+PROFILES_DIR = CONFIG_DIR / "profiles"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 STATE_FILE = CONFIG_DIR / "state.json"
 TMUX_CONF = CONFIG_DIR / "tmux.conf"
 SOCKET = os.environ.get("INKY_SOCKET", "inky")
+# Tab requests are one file each, so a script and a window never write the
+# same file; they live in the cache because they are disposable.
+REQUESTS_DIR = CACHE_DIR / "requests"
 
 DEFAULTS = {
     "theme": "inky",
+    # Slug of the profile new tabs start with; empty means the plain window
+    # settings.
+    "profile": "",
     "font": {"family": "JetBrains Mono", "size": 11.5, "line_height": 1.06, "weight": 400},
     "ui_font": {"family": "Inter", "size": 10.0},
     "shell": "",
@@ -48,6 +57,7 @@ DEFAULTS = {
         "notify_agent_done": True,
         "notify_agent_waiting": True,
         "confirm_agent_close": True,
+        "confirm_process_close": True,
         "poll_interval": 1.4,
     },
     "agents": {"custom": {}},
@@ -65,7 +75,8 @@ def deep_merge(base: dict, override: dict) -> dict:
 
 
 def ensure_dirs() -> None:
-    for path in (CONFIG_DIR, CACHE_DIR, USER_THEMES, TRANSCRIPT_DIR, CACHE_DIR / "paste"):
+    for path in (CONFIG_DIR, CACHE_DIR, USER_THEMES, PROFILES_DIR, REQUESTS_DIR,
+                 TRANSCRIPT_DIR, CACHE_DIR / "paste"):
         path.mkdir(parents=True, exist_ok=True)
 
 
@@ -87,6 +98,51 @@ def save_config(cfg: dict) -> None:
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
     except OSError:
         pass
+
+
+def request_tab(profile: str = "", cwd: str = "", command: str = "",
+                title: str = "") -> Path:
+    """Ask a running Inky window to open a tab (``inky open --tab``).
+
+    A request is its own file, so several scripts can queue at once and a
+    window never has to take a lock or merge a shared document.
+    """
+    ensure_dirs()
+    payload = {"profile": profile, "cwd": cwd, "command": command,
+               "title": title, "at": time.time()}
+    stamp = int(time.time() * 1000)
+    path = REQUESTS_DIR / f"{stamp}-{os.getpid()}-{uuid.uuid4().hex[:6]}.json"
+    path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    return path
+
+
+def take_requests(max_age: float = 300.0) -> list[dict]:
+    """Drain queued tab requests, dropping anything stale.
+
+    A request older than ``max_age`` was meant for a window that was not
+    running at the time; replaying it hours later would be a surprise.
+    """
+    ensure_dirs()
+    now = time.time()
+    out: list[dict] = []
+    for path in sorted(REQUESTS_DIR.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = None
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        if not isinstance(data, dict):
+            continue
+        try:
+            age = now - float(data.get("at") or 0)
+        except (TypeError, ValueError):
+            age = max_age + 1
+        if age <= max_age:
+            out.append(data)
+    return out
 
 
 class State:

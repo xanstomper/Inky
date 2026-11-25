@@ -676,11 +676,12 @@ class SettingsDialog(Gtk.Dialog):
 
     def __init__(self, parent, cfg: dict, theme: Theme, themes: dict,
                  on_apply=None, on_pick_theme=None, on_make_theme=None,
-                 on_action=None) -> None:
+                 on_action=None, profiles=None) -> None:
         super().__init__(title="Settings", transient_for=parent, modal=False)
         self.cfg = cfg
         self.theme = theme
         self.themes = themes
+        self.profiles = dict(profiles or {})
         self.on_apply = on_apply
         self.on_pick_theme = on_pick_theme
         self.on_make_theme = on_make_theme
@@ -699,6 +700,7 @@ class SettingsDialog(Gtk.Dialog):
         self.notebook.append_page(self._appearance_page(), Gtk.Label(label="Appearance"))
         self.notebook.append_page(self._terminal_page(), Gtk.Label(label="Terminal"))
         self.notebook.append_page(self._agents_page(), Gtk.Label(label="Agents & extras"))
+        self.notebook.append_page(self._profiles_page(), Gtk.Label(label="Profiles"))
         area.pack_start(self.notebook, True, True, 0)
 
         footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -781,6 +783,22 @@ class SettingsDialog(Gtk.Dialog):
         spin.connect("value-changed", lambda s: callback(int(s.get_value())))
         return spin
 
+    def show_page(self, name: str) -> None:
+        """Jump to a page by title prefix (``profiles``, ``appearance``…)."""
+        for index in range(self.notebook.get_n_pages()):
+            label = self.notebook.get_tab_label_text(self.notebook.get_page(index)) or ""
+            if label.strip().lower().startswith(name):
+                self.notebook.set_current_page(index)
+                return
+
+    def refresh_profiles(self, profiles: dict) -> None:
+        self.profiles = dict(profiles or {})
+        self._refresh_profile_rows()
+
+    def _emit(self, kind: str, payload: str | None = None) -> None:
+        if callable(self.on_action):
+            self.on_action(kind, payload)
+
     def _changed(self) -> None:
         """Debounce live application; GTK fires scales once per pixel."""
         if self._loading:
@@ -796,6 +814,69 @@ class SettingsDialog(Gtk.Dialog):
         return False
 
     # -- pages ---------------------------------------------------------
+    def _profiles_page(self) -> Gtk.ScrolledWindow:
+        scroll, body = self._page("profiles")
+        self._section(
+            body, "Profiles",
+            "A profile is a plain JSON file in ~/.config/inky/profiles — palette, "
+            "font and startup command. Open one in a new tab, or snapshot the tab "
+            "you are looking at into a file you can commit or copy to another "
+            "machine.",
+        )
+        self.profile_rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        body.pack_start(self.profile_rows, False, False, 0)
+        buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        snap = Gtk.Button(label="New from current tab")
+        snap.connect("clicked", lambda *_: self._emit("profile-snapshot"))
+        folder = Gtk.Button(label="Open folder")
+        folder.connect("clicked", lambda *_: self._emit("profiles-folder"))
+        buttons.pack_start(snap, False, False, 0)
+        buttons.pack_start(folder, False, False, 0)
+        body.pack_start(buttons, False, False, 10)
+        cli = Gtk.Label(
+            label="inky open --tab --profile <slug>   ·   opens one from a script or agent",
+            xalign=0.0,
+        )
+        cli.get_style_context().add_class("settings-help")
+        body.pack_start(cli, False, False, 0)
+        self._refresh_profile_rows()
+        return scroll
+
+    def _refresh_profile_rows(self) -> None:
+        box = getattr(self, "profile_rows", None)
+        if box is None:
+            return
+        for child in box.get_children():
+            box.remove(child)
+        if not self.profiles:
+            empty = Gtk.Label(
+                label="No profiles yet — snapshot the current tab to make one.",
+                xalign=0.0,
+            )
+            empty.get_style_context().add_class("settings-help")
+            box.pack_start(empty, False, False, 0)
+        for slug, profile in self.profiles.items():
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+            name = Gtk.Label(label=profile.name, xalign=0.0)
+            name.get_style_context().add_class("settings-label")
+            text.pack_start(name, False, False, 0)
+            summary = Gtk.Label(label=profile.summary(), xalign=0.0)
+            summary.get_style_context().add_class("settings-help")
+            summary.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+            text.pack_start(summary, False, False, 0)
+            row.pack_start(text, True, True, 0)
+            delete = Gtk.Button(label="Delete")
+            delete.connect("clicked",
+                           lambda _b, slug=slug: self._emit("profile-delete", slug))
+            open_tab = Gtk.Button(label="Open tab")
+            open_tab.connect("clicked",
+                             lambda _b, slug=slug: self._emit("profile-open", slug))
+            row.pack_end(delete, False, False, 0)
+            row.pack_end(open_tab, False, False, 0)
+            box.pack_start(row, False, False, 0)
+        box.show_all()
+
     def _appearance_page(self) -> Gtk.ScrolledWindow:
         scroll, body = self._page("appearance")
         self._section(body, "Theme", "Every theme is a 16-colour ANSI palette plus accents.")

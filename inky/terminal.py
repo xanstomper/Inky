@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import time
 
 import gi
@@ -16,6 +17,15 @@ from gi.repository import Gdk, GLib, GObject, Gtk, Pango, Vte  # noqa: E402
 from . import config  # noqa: E402
 from .theme import Theme  # noqa: E402
 from .util import shell_quote  # noqa: E402
+
+URL_PATTERN = r"(?:https?|ftp|file)://[^\s<>\"'`]+|mailto:[^\s<>\"'`]+"
+URI_SCHEMES = ("http://", "https://", "ftp://", "file://", "mailto:")
+# VTE rejects a match regex without the multiline compile flag; UTF/UCP keep
+# non-ASCII paths and hostnames matching the way GNOME Terminal does.
+PCRE2_MULTILINE = 0x00000400
+PCRE2_UTF = 0x00080000
+PCRE2_UCP = 0x00020000
+REGEX_FLAGS = PCRE2_MULTILINE | PCRE2_UTF | PCRE2_UCP
 
 CURSOR_SHAPES = {
     "block": getattr(Vte.CursorShape, "BLOCK", None),
@@ -39,15 +49,20 @@ class InkyTerminal(Gtk.Box):
         "hover": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
 
-    def __init__(self, session: str, cfg: dict, theme: Theme, tmux, cwd: str | None = None) -> None:
+    def __init__(self, session: str, cfg: dict, theme: Theme, tmux, cwd: str | None = None,
+                 profile=None) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.session = session
         self.cfg = cfg
         self.theme = theme
         self.tmux = tmux
+        self.profile = profile
         self.cwd = cwd or os.path.expanduser("~")
 
         self._selection_id = 0
+        # VTE match tags are 0-based, so -1 (no matcher) is the sentinel.
+        self.link_tag = -1
+        self._last_zoom = 0.0
         self.term = Vte.Terminal()
         self.term.set_allow_hyperlink(True)
         try:
@@ -66,6 +81,7 @@ class InkyTerminal(Gtk.Box):
         self.term.connect("child-exited", self._on_child_exited)
         self.term.connect("hyperlink-hover-uri-changed", self._on_hover)
 
+        self._setup_links()
         self._setup_drop()
         self.term.connect("key-press-event", self._on_key)
         self.spawn()
@@ -76,6 +92,22 @@ class InkyTerminal(Gtk.Box):
         if isinstance(window, Gtk.Window) and hasattr(window, "handle_shortcut"):
             return bool(window.handle_shortcut(event))
         return False
+
+    def _setup_links(self) -> None:
+        """One matcher tag for every URL on screen, the way GNOME Terminal does it.
+
+        ``allow_hyperlink`` covers OSC 8 links; this regex covers the plain
+        URLs agents and build logs print all day.
+        """
+        try:
+            # The length must be explicit and the multiline flag must be set:
+            # VTE silently refuses a matcher that fails either check.
+            regex = Vte.Regex.new_for_match(URL_PATTERN, len(URL_PATTERN), REGEX_FLAGS)
+            self.link_tag = int(self.term.match_add_regex(regex, 0))
+        except Exception:
+            self.link_tag = -1
+        self.term.connect("button-press-event", self._on_click)
+        self.term.connect("scroll-event", self._on_scroll)
 
     def _setup_drop(self) -> None:
         targets = [
@@ -133,7 +165,7 @@ class InkyTerminal(Gtk.Box):
             pass
         try:
             self.term.set_cell_height_scale(
-                float(self.cfg["font"].get("line_height", 0.0)) or 1.0
+                float(self.font().get("line_height", 0.0)) or 1.0
             )
         except Exception:
             pass
@@ -165,8 +197,15 @@ class InkyTerminal(Gtk.Box):
         except Exception:
             pass
 
+    def font(self) -> dict:
+        """Effective grid font: the window's, with this tab's profile on top."""
+        base = self.cfg.get("font") or {}
+        if self.profile is not None:
+            return self.profile.font_for(base)
+        return dict(base)
+
     def apply_font(self) -> None:
-        font = self.cfg["font"]
+        font = self.font()
         desc = Pango.FontDescription()
         desc.set_family(font.get("family", "JetBrains Mono"))
         desc.set_size(int(float(font.get("size", 11.5)) * Pango.SCALE))
@@ -244,6 +283,85 @@ class InkyTerminal(Gtk.Box):
 
     def _on_hover(self, _term, uri: str, _bbox) -> None:
         self.emit("hover", uri or "")
+
+    # -- links and zoom ------------------------------------------------
+    def _on_click(self, _term, event) -> bool:
+        """Ctrl+click a URL opens it, and never types into the session."""
+        if event.button != 1 or not (event.state & Gdk.ModifierType.CONTROL_MASK):
+            return False
+        uri = self.uri_for_event(event)
+        if not uri:
+            return False
+        self.open_uri(uri)
+        return True
+
+    def uri_for_event(self, event) -> str:
+        """The URL under the pointer, from a regex match or an OSC 8 link."""
+        try:
+            found = self.term.match_check_event(event)
+            text, tag = found if isinstance(found, tuple) else (found, None)
+            if text and self._is_uri(text):
+                if self.link_tag < 0 or tag is None or int(tag) == self.link_tag:
+                    return str(text).strip()
+        except Exception:
+            pass
+        try:
+            hyper = self.term.check_hyperlink_at(event.x, event.y)
+            uri = hyper.get_uri() if hyper is not None else ""
+            if uri and self._is_uri(uri):
+                return uri
+        except Exception:
+            pass
+        return ""
+
+    @staticmethod
+    def _is_uri(text: str) -> bool:
+        return str(text or "").strip().lower().startswith(URI_SCHEMES)
+
+    def open_uri(self, uri: str) -> bool:
+        """Hand a URL to the browser; the terminal never runs it."""
+        if not self._is_uri(uri):
+            return False
+        try:
+            window = self.get_toplevel()
+            if isinstance(window, Gtk.Window):
+                Gtk.show_uri_on_window(window, uri, Gtk.get_current_event_time())
+                return True
+        except Exception:
+            pass
+        try:
+            subprocess.Popen(["xdg-open", uri], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+            return True
+        except Exception:
+            return False
+
+    def _on_scroll(self, _term, event) -> bool:
+        """Ctrl+wheel zooms the grid, like every GTK terminal."""
+        if not (event.state & Gdk.ModifierType.CONTROL_MASK):
+            return False
+        now = time.time()
+        if now - self._last_zoom < 0.06:
+            return True
+        step = 0
+        if event.direction == Gdk.ScrollDirection.UP:
+            step = 1
+        elif event.direction == Gdk.ScrollDirection.DOWN:
+            step = -1
+        elif event.direction == Gdk.ScrollDirection.SMOOTH:
+            try:
+                _ok, _dx, dy = event.get_scroll_deltas()
+                step = 1 if dy < 0 else -1
+            except Exception:
+                step = 0
+        if not step:
+            return False
+        window = self.get_toplevel()
+        if hasattr(window, "_zoom"):
+            self._last_zoom = now
+            window._zoom(0.5 * step)
+            return True
+        return False
 
     def _on_selection(self, _term) -> None:
         try:
