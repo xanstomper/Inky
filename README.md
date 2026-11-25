@@ -13,8 +13,8 @@
   <img alt="VTE" src="https://img.shields.io/badge/VTE-2.91-6a5acd?style=flat-square">
   <img alt="tmux" src="https://img.shields.io/badge/tmux-persistent%20sessions-1bb91f?style=flat-square&logo=tmux&logoColor=white">
   <img alt="Themes" src="https://img.shields.io/badge/themes-50-c9a0ff?style=flat-square">
-  <img alt="License" src="https://img.shields.io/github/license/xanstomper/inky?style=flat-square">
-  <img alt="Stars" src="https://img.shields.io/github/stars/xanstomper/inky?style=flat-square">
+  <img alt="License" src="https://img.shields.io/github/license/xanstomper/Inky?style=flat-square">
+  <img alt="Stars" src="https://img.shields.io/github/stars/xanstomper/Inky?style=flat-square">
 </p>
 
 Inky is a terminal that assumes the thing running inside it is a coding agent.
@@ -129,7 +129,7 @@ sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-vte-2.91 tmux
 # Arch
 sudo pacman -S python-gobject gtk3 vte3 tmux
 
-git clone https://github.com/xanstomper/inky.git ~/inky
+git clone https://github.com/xanstomper/Inky.git ~/inky
 cd ~/inky && ./install.sh
 inky
 ```
