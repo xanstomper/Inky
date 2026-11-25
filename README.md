@@ -25,6 +25,12 @@ working or waiting, and tells you when it needs you.
 No Electron, no web view, no JavaScript shell. GTK3 + VTE, one Python process per
 window, and a chrome made of hairlines so the grid is what you look at.
 
+![Inky feature tour: live theme picker, font wall, theme maker, broadcast prompts, zen mode](assets/demo.gif)
+
+<sub>38 seconds, no cuts: search a theme and watch the whole window recolour, retype the
+grid from the font wall, save a custom palette in the theme maker, broadcast one prompt
+to every tab, then drop into zen mode. [Full-quality MP4](assets/demo.mp4)</sub>
+
 ![Inky with two tabs, an agent session and a diff](assets/screenshot.png)
 
 ## Why Inky
