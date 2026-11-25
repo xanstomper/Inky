@@ -74,39 +74,61 @@ headerbar.inky-header button.titlebutton.close:hover {{
     color: {u['danger']};
 }}
 
-.tabstrip {{
-    background-color: {bar};
-    border-bottom: 1px solid {u['border']};
+/* GNOME notebook tabs: labels that keep their natural width on the headerbar
+   colour, the checked one dropping to the terminal colour with a 4px accent
+   rule (Adwaita's tab metrics). They no longer split the row between them. */
+.inkytabs {{
+    background-color: {theme.bg};
 }}
-.tabstrip box {{
-    background-color: transparent;
-}}
-.tabstrip scrollbar,
-.tabstrip scrollbar slider {{
-    min-width: 0;
-    min-height: 0;
-    background: transparent;
-    border: none;
-}}
-
-/* Terminal-style tab bars: full-height rectangles that share the row, the
-   active one drops to the terminal colour and carries an accent underline. */
-.tab {{
-    background-color: {bar};
+.inkytabs > header {{
+    background-color: {mix(theme.bg, theme.fg, 0.055)};
     background-image: none;
     border: none;
-    border-right: 1px solid {u['border']};
+    border-top: 1px solid {u['border']};
+    border-bottom: 1px solid {u['border']};
+    box-shadow: none;
+    padding: 0;
+    min-height: 36px;
+}}
+.inkytabs > header > tabs {{
+    margin: 0;
+}}
+.inkytabs > header > tabs > tab {{
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0;
+    padding: 0;
+    min-height: 36px;
+    transition: none;
+}}
+.inkytabs > header > tabs > tab:hover {{
+    background-color: {tab_hover};
+    box-shadow: inset 0 -4px {mix(theme.bg, theme.fg, 0.30)};
+}}
+.inkytabs > header > tabs > tab:checked {{
+    background-color: {theme.bg};
+    box-shadow: inset 0 -4px {theme.accent};
+}}
+.inkytabs > header > tabs > arrow {{
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: {quiet};
+    padding: 0 4px;
+}}
+
+/* The label widget inside a tab: transparent, the notebook paints the tab. */
+.tab {{
+    background-color: transparent;
+    background-image: none;
+    border: none;
     border-radius: 0;
     padding: 0;
     margin: 0;
     min-height: 36px;
-}}
-.tab:hover {{
-    background-color: {tab_hover};
-}}
-.tab.active {{
-    background-color: {theme.bg};
-    box-shadow: inset 0 -2px {theme.accent};
 }}
 .tab-title {{
     font-family: "{ui_family}", "Cantarell", sans-serif;
@@ -138,6 +160,12 @@ headerbar.inky-header button.titlebutton.close:hover {{
     background-color: transparent;
     color: {quiet};
     font-size: {tiny + 1.0}pt;
+    /* GNOME keeps the ✕ out of the way until you point at the tab. */
+    opacity: 0;
+}}
+.tab:hover .tab-close,
+.tab.active .tab-close {{
+    opacity: 1;
 }}
 .tab-close:hover {{
     background-color: transparent;

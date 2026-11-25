@@ -313,6 +313,14 @@ def _selftest() -> int:
         order_ok = ([tab.session for tab in window.tabs] == before[1:2] + before[:1] + before[2:])
         window.move_tab(window.tabs[1], -1)
         order_ok = order_ok and [tab.session for tab in window.tabs] == before
+        # Tabs are real notebook pages, in the same order as `window.tabs`.
+        pages = [window.notebook.get_nth_page(i)
+                 for i in range(window.notebook.get_n_pages())]
+        notebook_ok = (isinstance(window.notebook, Gtk.Notebook)
+                       and len(pages) == len(window.tabs)
+                       and all(page is tab.terminal
+                               for page, tab in zip(pages, window.tabs))
+                       and window.notebook.get_tab_reorderable(window.tabs[0].terminal))
 
         # Settings and the theme maker must build against a live window, and the
         # maker must offer a complete 16-slot palette.
@@ -325,9 +333,9 @@ def _selftest() -> int:
         settings.destroy()
         maker.destroy()
         window.toggle_zen()
-        zen_ok = not window.tabrow.get_visible()
+        zen_ok = not window.notebook.get_show_tabs()
         window.toggle_zen()
-        zen_ok = zen_ok and window.tabrow.get_visible()
+        zen_ok = zen_ok and window.notebook.get_show_tabs()
 
         # Profiles: a snapshot writes a portable file, and a tab opened with it
         # takes the profile's font and palette instead of the window's.
@@ -363,13 +371,14 @@ def _selftest() -> int:
         result["ok"] = (len(window.tabs) >= 3 and alive and transcript_ok
                         and len(themes) >= 5 and naming_ok and order_ok
                         and dialogs_ok and zen_ok and profile_ok and queue_ok
-                        and link_ok)
+                        and link_ok and notebook_ok)
         print(
             f"SELFTEST {'OK' if result['ok'] else 'FAILED'} "
             f"tabs={len(window.tabs)} themes={len(themes)} alive={alive} "
             f"transcript={transcript_ok} naming={naming_ok} order={order_ok} "
             f"dialogs={dialogs_ok} zen={zen_ok} profile={profile_ok} "
-            f"queue={queue_ok} links={link_ok} titles={named}"
+            f"queue={queue_ok} links={link_ok} notebook={notebook_ok} "
+            f"titles={named}"
         )
         tmux = Tmux()
         for tab in window.tabs:

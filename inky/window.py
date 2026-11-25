@@ -86,20 +86,22 @@ class Tab:
         self.widget.set_visible_window(True)
         self.widget.set_events(Gdk.EventMask.BUTTON_PRESS_MASK
                                | Gdk.EventMask.SCROLL_MASK)
-        self.widget.set_size_request(-1, 36)
-        self.widget.set_hexpand(True)
+        # Notebook tabs are sized by their label, so this is the tab's
+        # natural width; the title ellipsizes past its cap instead of the
+        # tab growing without bound.
+        self.widget.set_size_request(128, 36)
         self.widget.set_valign(Gtk.Align.FILL)
         _set_pointer(self.widget)
 
+        # Nothing here may expand: a notebook hands spare width to expanding
+        # labels, which is what turned the tabs back into window-wide plates.
         inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         inner.set_halign(Gtk.Align.FILL)
-        inner.set_hexpand(True)
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=7)
         row.set_valign(Gtk.Align.CENTER)
         row.set_halign(Gtk.Align.FILL)
-        row.set_hexpand(True)
-        row.set_margin_start(11)
-        row.set_margin_end(7)
+        row.set_margin_start(10)
+        row.set_margin_end(4)
 
         self.glyph = Gtk.Label(label="◆")
         self.glyph.get_style_context().add_class("tab-glyph")
@@ -109,9 +111,9 @@ class Tab:
         self.title_label = Gtk.Label(label=title)
         self.title_label.get_style_context().add_class("tab-title")
         self.title_label.set_ellipsize(Pango.EllipsizeMode.END)
-        self.title_label.set_max_width_chars(40)
+        self.title_label.set_max_width_chars(32)
         self.title_label.set_xalign(0.0)
-        row.pack_start(self.title_label, True, True, 0)
+        row.pack_start(self.title_label, False, False, 0)
 
         self.close_widget = Gtk.EventBox()
         self.close_widget.get_style_context().add_class("tab-close")
@@ -144,8 +146,9 @@ class Tab:
             self.window.rename_tab(self)
             return True
         if event.button == 1:
-            self.window.activate(self.window.tabs.index(self))
-            return True
+            # Let the notebook see the press: it owns tab selection and the
+            # drag-to-reorder gesture. `switch-page` updates the window state.
+            return False
         if event.button == 2:
             self.window.close_tab(self)
             return True
@@ -242,6 +245,7 @@ class InkyWindow(Gtk.Window):
         self._poll_id = 0
         self._status_tick = 0
         self._closing = False
+        self._switching = False
         self.zen = False
 
         self.tmux.ensure_server()
@@ -296,33 +300,25 @@ class InkyWindow(Gtk.Window):
         header.pack_end(self.menu_button)
         self.set_titlebar(header)
 
-        # Tab bar: one full-width row under the header, tabs sharing it equally
-        # and switching to their own plate with an accent underline.
-        self.tabbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        self.tabbox.set_homogeneous(True)
-        self.tabbox.set_hexpand(True)
-        self.tabbox.set_valign(Gtk.Align.FILL)
-
-        self.tabrow = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        self.tabrow.get_style_context().add_class("tabstrip")
-        self.tabrow.pack_start(self.tabbox, True, True, 0)
-        self.tabrow.set_size_request(-1, 37)
-        self.tabrow.connect("scroll-event", self._on_tab_strip_scroll)
-
-        self.stack = Gtk.Stack()
-        # A crossfade repaints two full terminal grids every tab switch. VTE has
-        # no compositor-friendly snapshot, so switching instantly is both the
-        # smoother-looking and the cheaper choice.
-        self.stack.set_transition_type(Gtk.StackTransitionType.NONE)
-        self.stack.set_transition_duration(0)
-        self.stack.set_hexpand(True)
-        self.stack.set_vexpand(True)
+        # Real GtkNotebook tabs, the way GNOME Terminal does them: labels size
+        # to their content, the strip scrolls when they overflow, and tabs can
+        # be dragged into a new order. The custom strip drew equal plates that
+        # split the window in two, which reads as a titlebar, not as tabs.
+        self.notebook = Gtk.Notebook()
+        self.notebook.get_style_context().add_class("inkytabs")
+        self.notebook.set_scrollable(True)
+        self.notebook.set_show_border(False)
+        self.notebook.set_tab_pos(Gtk.PositionType.TOP)
+        self.notebook.set_hexpand(True)
+        self.notebook.set_vexpand(True)
+        self.notebook.connect("switch-page", self._on_switch_page)
+        self.notebook.connect("page-reordered", self._on_page_reordered)
 
         self.search = SearchBar(self._do_search, self._search_closed)
         self.search.set_visible(False)
 
         self.term_overlay = Gtk.Overlay()
-        self.term_overlay.add(self.stack)
+        self.term_overlay.add(self.notebook)
         self.term_overlay.add_overlay(self.search)
         self.term_overlay.set_hexpand(True)
         self.term_overlay.set_vexpand(True)
@@ -333,7 +329,6 @@ class InkyWindow(Gtk.Window):
         self.term_overlay.set_margin_bottom(padding)
         self.term_overlay.get_style_context().add_class("term-area")
 
-        root.pack_start(self.tabrow, False, False, 0)
         root.pack_start(self.term_overlay, True, True, 0)
 
         overlay = Gtk.Overlay()
@@ -455,12 +450,13 @@ class InkyWindow(Gtk.Window):
         tab.terminal.term.connect("button-press-event", self._on_terminal_click)
 
         self.tabs.append(tab)
-        self.stack.add_named(terminal, session)
-        # Widgets created after the window was shown start hidden, and GTK
-        # will not switch a stack to a hidden child — show it explicitly.
+        # Widgets created after the window was shown start hidden, so show the
+        # page and its tab label explicitly before the notebook can switch to
+        # them.
         terminal.show_all()
-        self.tabbox.pack_start(tab.widget, True, True, 0)
         tab.widget.show_all()
+        self.notebook.append_page(terminal, tab.widget)
+        self.notebook.set_tab_reorderable(terminal, True)
         self._sync_tabstrip()
         self.activate(len(self.tabs) - 1)
 
@@ -477,26 +473,47 @@ class InkyWindow(Gtk.Window):
         return False
 
     def _sync_tabstrip(self) -> None:
-        # The bar is always there: one tab or ten, it owns the second row.
-        self.tabrow.show_all()
+        # The strip is always there: one tab or ten, it owns the second row.
+        self.notebook.show_all()
 
     def current_index(self) -> int:
         tab = self.current_tab()
         return self.tabs.index(tab) if tab else 0
 
     def current_tab(self) -> Tab | None:
-        child = self.stack.get_visible_child()
-        for tab in self.tabs:
-            if tab.terminal is child:
-                return tab
+        index = self.notebook.get_current_page()
+        if 0 <= index < len(self.tabs):
+            return self.tabs[index]
         return self.tabs[-1] if self.tabs else None
+
+    def _on_switch_page(self, _notebook, _page, index: int) -> None:
+        if self._switching:
+            return
+        self.activate(index)
+
+    def _on_page_reordered(self, notebook, _child, _index: int) -> None:
+        """Dragging a tab is a real drag now; keep `tabs` in notebook order."""
+        order = []
+        for position in range(notebook.get_n_pages()):
+            page = notebook.get_nth_page(position)
+            tab = next((t for t in self.tabs if t.terminal is page), None)
+            if tab is not None:
+                order.append(tab)
+        if len(order) == len(self.tabs):
+            self.tabs = order
+        self.activate(notebook.get_current_page())
 
     def activate(self, index: int) -> None:
         if not self.tabs:
             return
         index = max(0, min(index, len(self.tabs) - 1))
         tab = self.tabs[index]
-        self.stack.set_visible_child(tab.terminal)
+        if self.notebook.get_current_page() != index:
+            self._switching = True
+            try:
+                self.notebook.set_current_page(index)
+            finally:
+                self._switching = False
         for other in self.tabs:
             ctx = other.widget.get_style_context()
             if other is tab:
@@ -543,8 +560,9 @@ class InkyWindow(Gtk.Window):
         tab.closed = True
         index = self.tabs.index(tab)
         self.tabs.remove(tab)
-        self.tabbox.remove(tab.widget)
-        self.stack.remove(tab.terminal)
+        page = self.notebook.page_num(tab.terminal)
+        if page >= 0:
+            self.notebook.remove_page(page)
         tab.terminal.destroy()
         if kill:
             self.tmux.kill_session(tab.session)
@@ -587,7 +605,7 @@ class InkyWindow(Gtk.Window):
         if target == index:
             return
         self.tabs.insert(target, self.tabs.pop(index))
-        self.tabbox.reorder_child(tab.widget, target)
+        self.notebook.reorder_child(tab.terminal, target)
         self.activate(target)
         self._save_window()
 
@@ -906,7 +924,7 @@ class InkyWindow(Gtk.Window):
     def toggle_zen(self) -> None:
         """Strip the chrome, keep the grid. The shortcut still gets you out."""
         self.zen = not self.zen
-        self.tabrow.set_visible(not self.zen)
+        self.notebook.set_show_tabs(not self.zen)
         for widget in (self.new_button, self.search_button):
             widget.set_visible(not self.zen)
         self.toast.show_message(
@@ -1398,8 +1416,9 @@ class InkyWindow(Gtk.Window):
         tab.closed = True
         if tab in self.tabs:
             self.tabs.remove(tab)
-            self.tabbox.remove(tab.widget)
-            self.stack.remove(tab.terminal)
+            page = self.notebook.page_num(tab.terminal)
+            if page >= 0:
+                self.notebook.remove_page(page)
             try:
                 tab.terminal.destroy()
             except Exception:
