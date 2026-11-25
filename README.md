@@ -142,8 +142,8 @@ desktop entry. Optional but recommended: `psutil` (agent detection), `xclip` or 
 - Title bar: `+` new tab, centered `tab · folder`, search, `☰` menu (themes live in the menu).
 - GNOME Terminal naming: a tab is named after the running program (`opencode`, `nvim`,
   `ssh`), and after its folder when it is only a shell. Renaming pins the name.
-- No status bar by default — cwd, branch and agent state live in the tab tooltip, the
-  window title and notifications. `window.status_bar: true` brings back the hairline.
+- No status bar: the grid runs to the frame. Cwd and agent state live in the tab
+  tooltip, the window title and notifications.
 
 **Sessions that survive**
 - Every tab is a tmux session on a private socket; closing the window never kills a run.
@@ -202,12 +202,12 @@ desktop entry. Optional but recommended: `psutil` (agent detection), `xclip` or 
   for the interface.
 - Cursor shape and blink, the WCAG legibility floor (1.0–7.0), window padding and opacity.
 - Terminal page: VTE scrollback, copy-on-select, scroll-on-output, scroll-on-keystroke,
-  mouse autohide, audible bell, status bar.
+  mouse autohide, audible bell.
 - Agents page: finish/waiting notifications, close confirmation, poll interval.
 - **Extras**: one-click zen mode, broadcast prompt, theme shuffle, and a shortcut to the
   themes folder.
-- **Zen mode** (`Ctrl+Shift+Z`): hides the tab row, toolbar buttons and status bar and
-  leaves only the grid. Same shortcut, `Escape`, or the `☰` menu brings the chrome back.
+- **Zen mode** (`Ctrl+Shift+Z`): hides the tab row and toolbar buttons and leaves only
+  the grid. Same shortcut, `Escape`, or the `☰` menu brings the chrome back.
 - **Broadcast prompt** (`Ctrl+Shift+B`): type one prompt in the composer and it is sent
   to every open tab — the same instruction fanned out across several agents at once.
 
@@ -265,7 +265,7 @@ and copies, `Shift`+drag uses VTE selection.
   "font": { "family": "JetBrains Mono", "size": 11.5, "line_height": 1.06, "weight": 400 },
   "ui_font": { "family": "Inter", "size": 10.0 },
   "shell": "",
-  "window": { "width": 1240, "height": 800, "padding": 0, "opacity": 1.0, "status_bar": false },
+  "window": { "width": 1240, "height": 800, "padding": 0, "opacity": 1.0 },
   "behavior": {
     "scrollback": 2000,
     "min_contrast": 3.0,

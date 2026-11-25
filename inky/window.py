@@ -23,7 +23,7 @@ from .palette import Palette  # noqa: E402
 from .terminal import InkyTerminal  # noqa: E402
 from .theme import Theme, load_themes, pick  # noqa: E402
 from .tmux import Tmux, TmuxError  # noqa: E402
-from .util import ellipsize_middle, human_seconds, slugify, timestamp  # noqa: E402
+from .util import human_seconds, slugify, timestamp  # noqa: E402
 from .widgets import SearchBar, ThemePicker, Toast  # noqa: E402
 
 HOME = str(Path.home())
@@ -216,13 +216,11 @@ class InkyWindow(Gtk.Window):
         self.theme: Theme = pick(self.themes, theme_slug or cfg.get("theme"))
         self.tabs: list[Tab] = []
         self._css_provider = None
-        self._branch_cache: dict[str, tuple[float, str]] = {}
         self._status_cache: dict[str, str] = {}
         self._poll_id = 0
         self._status_tick = 0
         self._closing = False
         self.zen = False
-        self.show_statusbar = bool(cfg["window"].get("status_bar", False))
 
         self.tmux.ensure_server()
 
@@ -315,10 +313,6 @@ class InkyWindow(Gtk.Window):
 
         root.pack_start(self.tabrow, False, False, 0)
         root.pack_start(self.term_overlay, True, True, 0)
-        self.statusbar = self._build_statusbar()
-        self.show_statusbar = bool(self.cfg["window"].get("status_bar", False))
-        root.pack_start(self.statusbar, False, False, 0)
-        self.statusbar.set_visible(self.show_statusbar)
 
         overlay = Gtk.Overlay()
         overlay.add(root)
@@ -335,25 +329,6 @@ class InkyWindow(Gtk.Window):
         overlay.add_overlay(self.toast)
         overlay.set_overlay_pass_through(self.toast, True)
         self.add(overlay)
-
-    def _build_statusbar(self) -> Gtk.Box:
-        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        bar.get_style_context().add_class("statusbar")
-
-        self.info_left = Gtk.Label(label="")
-        self.info_left.get_style_context().add_class("status-label")
-        self.info_left.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
-        self.info_left.set_max_width_chars(70)
-        self.info_left.set_xalign(0.0)
-        bar.pack_start(self.info_left, False, False, 0)
-        bar.set_margin_start(2)
-
-        self.info_agent = Gtk.Label(label="")
-        self.info_agent.get_style_context().add_class("status-label")
-        self.info_agent.set_ellipsize(Pango.EllipsizeMode.END)
-        self.info_agent.set_no_show_all(True)
-        bar.pack_end(self.info_agent, False, False, 0)
-        return bar
 
     def _icon_button(self, icon: str, tooltip: str, callback) -> Gtk.Button:
         button = Gtk.Button()
@@ -435,9 +410,6 @@ class InkyWindow(Gtk.Window):
         tab = Tab(self, session, terminal, display, auto_title=auto)
         tab.cwd = cwd
         tab.terminal.connect("exited", lambda _t, status, tab=tab: self._on_terminal_exit(tab, status))
-        tab.terminal.connect("hover", lambda _t, uri: self.refresh_status(hover_uri=uri))
-        tab.terminal.term.connect("leave-notify-event",
-                                  lambda *_: self.refresh_status())
         tab.terminal.term.connect("button-press-event", self._on_terminal_click)
 
         self.tabs.append(tab)
@@ -736,8 +708,6 @@ class InkyWindow(Gtk.Window):
         padding = max(0, int(self.cfg["window"].get("padding", 0)))
         for side in ("start", "end", "top", "bottom"):
             getattr(self.term_overlay, f"set_margin_{side}")(padding)
-        self.show_statusbar = bool(self.cfg["window"].get("status_bar", False))
-        self.statusbar.set_visible(self.show_statusbar and not self.zen)
         try:
             opacity = float(self.cfg["window"].get("opacity", 1.0))
             self.set_opacity(max(0.4, min(1.0, opacity)))
@@ -786,7 +756,6 @@ class InkyWindow(Gtk.Window):
         self.tabrow.set_visible(not self.zen)
         for widget in (self.new_button, self.search_button):
             widget.set_visible(not self.zen)
-        self.statusbar.set_visible(self.show_statusbar and not self.zen)
         self.toast.show_message(
             "Zen mode — Ctrl+Shift+Z brings the chrome back" if self.zen
             else "Chrome restored"
@@ -1105,26 +1074,6 @@ class InkyWindow(Gtk.Window):
             return "~"
         return os.path.basename(cwd.rstrip("/")) or "shell"
 
-    def _git_branch(self, cwd: str) -> str:
-        if not cwd or not os.path.isdir(cwd):
-            return ""
-        now = time.time()
-        cached = self._branch_cache.get(cwd)
-        if cached and now - cached[0] < 6:
-            return cached[1]
-        branch = ""
-        try:
-            proc = subprocess.run(
-                ["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"],
-                capture_output=True, text=True, timeout=0.6,
-            )
-            if proc.returncode == 0:
-                branch = proc.stdout.strip()
-        except Exception:
-            branch = ""
-        self._branch_cache[cwd] = (now, branch)
-        return branch
-
     def _set_cached(self, key: str, value: str, apply) -> bool:
         """Run ``apply`` only when a display string really changed.
 
@@ -1137,43 +1086,11 @@ class InkyWindow(Gtk.Window):
         apply(value)
         return True
 
-    def refresh_status(self, hover_uri: str = "") -> None:
+    def refresh_status(self) -> None:
         tab = self.current_tab()
         if not tab:
             return
         muted = self.theme.ui["muted"]
-        if hover_uri and self.show_statusbar:
-            markup = (
-                f'<span foreground="{self.theme.accent}">↗ '
-                f'{GLib.markup_escape_text(ellipsize_middle(hover_uri, 60))}</span>'
-            )
-            self._set_cached("left", markup, self.info_left.set_markup)
-            self._set_cached("left-tip", hover_uri, self.info_left.set_tooltip_text)
-        else:
-            cwd = GLib.markup_escape_text(ellipsize_middle(self._display_cwd(tab.cwd), 52))
-            branch = self._git_branch(tab.cwd)
-            markup = f'<span foreground="{muted}">{cwd}</span>'
-            if branch:
-                markup += (f'   <span foreground="{self.theme.accent}">⎇ '
-                           f'{GLib.markup_escape_text(branch)}</span>')
-            self._set_cached("left", markup, self.info_left.set_markup)
-            self._set_cached("left-tip", tab.cwd, self.info_left.set_tooltip_text)
-        if tab.agent:
-            now = time.time()
-            state = "working" if tab.working(now) else "waiting"
-            markup = (
-                f'<span foreground="{tab.agent.color}">{tab.agent.glyph} '
-                f'{tab.agent.name}</span>'
-                f'<span foreground="{muted}">  {state} · '
-                f'{human_seconds(tab.agent.runtime)}</span>'
-            )
-            self._set_cached("agent", markup, self.info_agent.set_markup)
-            self.info_agent.set_visible(True)
-        else:
-            if self._status_cache.get("agent") != "":
-                self._status_cache["agent"] = ""
-                self.info_agent.set_markup("")
-            self.info_agent.set_visible(False)
         title = f"{tab.title} — Inky"
         if self._status_cache.get("window-title") != title:
             self._status_cache["window-title"] = title

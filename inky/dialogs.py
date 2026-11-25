@@ -943,12 +943,6 @@ class SettingsDialog(Gtk.Dialog):
             self._switch(self.cfg["behavior"].get("audible_bell", False),
                          lambda v: self._set(("behavior", "audible_bell"), v)),
         )
-        self._section(body, "Chrome")
-        self._row(
-            body, "Status bar", "Shows cwd, git branch and the live agent runtime.",
-            self._switch(self.cfg["window"].get("status_bar", False),
-                         lambda v: self._set(("window", "status_bar"), v)),
-        )
         return scroll
 
     def _agents_page(self) -> Gtk.ScrolledWindow:

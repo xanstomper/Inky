@@ -345,19 +345,6 @@ dialog separator {{
     padding: 0 5px;
 }}
 
-/* -- status line -------------------------------------------------- */
-.statusbar {{
-    background-color: transparent;
-    border: none;
-    padding: 1px 6px 3px 6px;
-    min-height: 17px;
-}}
-.status-label {{
-    font-family: "{ui_family}", "Cantarell", sans-serif;
-    font-size: {tiny}pt;
-    color: {u['muted']};
-}}
-
 .term-area {{
     background-color: transparent;
     border: none;

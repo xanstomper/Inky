@@ -32,8 +32,7 @@ DEFAULTS = {
     "font": {"family": "JetBrains Mono", "size": 11.5, "line_height": 1.06, "weight": 400},
     "ui_font": {"family": "Inter", "size": 10.0},
     "shell": "",
-    "window": {"width": 1240, "height": 800, "padding": 0, "opacity": 1.0,
-               "status_bar": False},
+    "window": {"width": 1240, "height": 800, "padding": 0, "opacity": 1.0},
     "behavior": {
         # tmux owns the deep history (100k lines); VTE's own ring buffer only
         # has to cover what was printed before the first attach.
