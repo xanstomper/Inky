@@ -42,7 +42,10 @@ window, and a chrome made of hairlines so the grid is what you look at.
   pasted as a path, because a terminal cannot carry pixels but an agent can read a file.
 - **Chrome you do not have to look at.** A full-width tab row that appears with the
   second tab, GNOME-style auto names (`opencode`, `nvim`, the folder for a bare shell),
-  a hairline title bar, and 50 themes.
+  a hairline title bar, and 50 themes — plus a theme maker when none of them fit.
+- **A font wall, not a font dialog.** Every installed font is listed and drawn in itself;
+  one click retypes the terminal or the whole interface. Monospace-only for the grid, so
+  agent tables and diffs never shear.
 - **Cheap when idle.** Three idle tabs cost about 4 ms of work per poll tick and under
   0.2% of one core. Numbers and method below.
 
@@ -175,6 +178,39 @@ desktop entry. Optional but recommended: `psutil` (agent detection), `xclip` or 
   a palette swatch per theme. Click once: the window recolours live and the choice is
   remembered. There is no giant submenu to hunt through.
 
+**Theme maker**
+- `Ctrl+Shift+M` opens a real colour editor: background, foreground, cursor, selection,
+  accent and all 16 ANSI slots, each on a colour button.
+- A live preview draws a miniature Inky window — titlebar dots, prompt, success/error
+  lines, a selected span, a diff stat and a block cursor — in the palette you are
+  building, at the real font metrics.
+- Start from any of the 50 themes, then **Save & apply**: the theme is written to
+  `~/.config/inky/themes/<slug>.json`, loaded and applied without restarting, and appears
+  in the picker immediately. Built-in themes are never overwritten — forks get a
+  `-custom` slug.
+- **Import…** loads any exported theme JSON, **Export…** writes the current colours out,
+  **Delete** removes your own themes only.
+
+**Fonts & settings**
+- `Ctrl+,` opens a three-page settings dialog. Everything applies live to the running
+  session; nothing needs a restart.
+- **Font wall** — every installed family, rendered in itself with a specimen line
+  (`The quick brown fox 0123456789  ❯ ✓ ⚠ ⎇ 0O1l`), searchable, with Nerd Font badges.
+  Switch the scope between **Terminal** (monospace only, 33 families here) and
+  **Interface** (all 313 installed families). Agent output uses the terminal font.
+- Font size (7–22 pt), weight (Light→Bold) and line height for the grid; separate size
+  for the interface.
+- Cursor shape and blink, the WCAG legibility floor (1.0–7.0), window padding and opacity.
+- Terminal page: VTE scrollback, copy-on-select, scroll-on-output, scroll-on-keystroke,
+  mouse autohide, audible bell, status bar.
+- Agents page: finish/waiting notifications, close confirmation, poll interval.
+- **Extras**: one-click zen mode, broadcast prompt, theme shuffle, and a shortcut to the
+  themes folder.
+- **Zen mode** (`Ctrl+Shift+Z`): hides the tab row, toolbar buttons and status bar and
+  leaves only the grid. Same shortcut, `Escape`, or the `☰` menu brings the chrome back.
+- **Broadcast prompt** (`Ctrl+Shift+B`): type one prompt in the composer and it is sent
+  to every open tab — the same instruction fanned out across several agents at once.
+
 **CLI**
 
 ```bash
@@ -198,6 +234,10 @@ inky --selftest            # headless smoke test (needs a display or xvfb-run)
 | `Ctrl+Shift+D` | detach tab into its own window |
 | `Ctrl+Shift+K` | command palette (actions, themes, agents, sessions) |
 | `Ctrl+Shift+P` | theme picker |
+| `Ctrl+Shift+M` | theme maker |
+| `Ctrl+,` | settings (fonts, contrast, cursor, agents) |
+| `Ctrl+Shift+B` | broadcast a prompt to every tab |
+| `Ctrl+Shift+Z` | zen mode |
 | `Ctrl+Shift+A` | launch an AI agent |
 | `Ctrl+Shift+Enter` | prompt composer |
 | `Ctrl+Shift+F` | regex search in scrollback |
@@ -232,6 +272,10 @@ and copies, `Shift`+drag uses VTE selection.
     "cursor_blink": true,
     "cursor_shape": "bar",
     "copy_on_select": false,
+    "scroll_on_output": false,
+    "scroll_on_keystroke": true,
+    "mouse_autohide": true,
+    "audible_bell": false,
     "notify_agent_done": true,
     "notify_agent_waiting": true,
     "confirm_agent_close": true,
@@ -267,6 +311,9 @@ theme only has to get the palette right. `accent` drives the active tab, search 
 and focus rings. Optional `"ui": {...}` keys override derived surfaces and `"dark": true|false`
 forces the derivation direction.
 
+The theme maker writes exactly this format into `~/.config/inky/themes/`, so anything you
+build in the dialog is a normal, portable theme file — import, export, share.
+
 ## How it fits together
 
 ```
@@ -284,6 +331,7 @@ inky (GTK3 + VTE)  ──attach──▶  tmux -L inky  ──▶  shell / agent
 | `inky/agents.py` | agent registry, `/proc` scanning, foreground naming |
 | `inky/palette.py` | fuzzy command palette |
 | `inky/composer.py` | multi-line prompt composer |
+| `inky/dialogs.py` | theme maker, font wall, settings dialog |
 | `inky/widgets.py` | theme picker, search bar, toast |
 | `inky/theme.py`, `inky/css.py` | theme model, contrast floor, generated GTK stylesheet |
 | `inky/config.py` | config, paths, shared state |

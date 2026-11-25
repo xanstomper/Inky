@@ -129,6 +129,31 @@ def load_themes() -> dict[str, Theme]:
     return dict(sorted(themes.items(), key=lambda item: item[1].name.lower()))
 
 
+def user_theme_path(slug: str) -> Path:
+    return Path(USER_THEMES) / f"{slug}.json"
+
+
+def is_user_theme(slug: str) -> bool:
+    return bool(slug) and user_theme_path(slug).is_file()
+
+
+def save_theme(slug: str, data: dict) -> Path:
+    """Write a theme into ``~/.config/inky/themes`` and return its path."""
+    path = user_theme_path(slug)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def delete_theme(slug: str) -> bool:
+    """Remove a user theme. Built-in themes live in the repo and are safe."""
+    path = user_theme_path(slug)
+    if not path.is_file():
+        return False
+    path.unlink()
+    return True
+
+
 def pick(themes: dict[str, Theme], slug: str | None) -> Theme:
     if slug and slug in themes:
         return themes[slug]

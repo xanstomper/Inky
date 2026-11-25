@@ -47,18 +47,9 @@ class InkyTerminal(Gtk.Box):
         self.tmux = tmux
         self.cwd = cwd or os.path.expanduser("~")
 
+        self._selection_id = 0
         self.term = Vte.Terminal()
-        self.term.set_scrollback_lines(int(cfg["behavior"]["scrollback"]))
-        self.term.set_scroll_on_keystroke(True)
-        self.term.set_scroll_on_output(False)
-        self.term.set_mouse_autohide(True)
         self.term.set_allow_hyperlink(True)
-        try:
-            # Agent CLIs ring the bell on completion; VTE would otherwise ask
-            # the session bus to beep, which is both noise and a round trip.
-            self.term.set_audible_bell(False)
-        except Exception:
-            pass
         try:
             self.term.set_allow_bold(True)
         except Exception:
@@ -67,19 +58,13 @@ class InkyTerminal(Gtk.Box):
             self.term.set_word_char_exceptions("@-./_~+:")
         except Exception:
             pass
-        try:
-            self.term.set_cell_height_scale(float(cfg["font"].get("line_height", 1.0)))
-        except Exception:
-            pass
-        self.set_cursor_mode()
 
         self.pack_start(self.term, True, True, 0)
+        self.apply_behavior()
         self.apply_theme(theme)
 
         self.term.connect("child-exited", self._on_child_exited)
         self.term.connect("hyperlink-hover-uri-changed", self._on_hover)
-        if cfg["behavior"].get("copy_on_select"):
-            self.term.connect("selection-changed", self._on_selection)
 
         self._setup_drop()
         self.term.connect("key-press-event", self._on_key)
@@ -126,6 +111,46 @@ class InkyTerminal(Gtk.Box):
             self.paste_text(text)
 
     # -- appearance ----------------------------------------------------
+    def apply_behavior(self) -> None:
+        """Push every runtime preference into the VTE widget.
+
+        Settings change these while the session keeps running, so this is
+        called again on every save — nothing here touches the PTY.
+        """
+        behavior = self.cfg["behavior"]
+        try:
+            self.term.set_scrollback_lines(int(behavior.get("scrollback", 2000)))
+        except Exception:
+            pass
+        try:
+            self.term.set_scroll_on_keystroke(bool(behavior.get("scroll_on_keystroke", True)))
+            self.term.set_scroll_on_output(bool(behavior.get("scroll_on_output", False)))
+            self.term.set_mouse_autohide(bool(behavior.get("mouse_autohide", True)))
+            # Agent CLIs ring the bell on completion; VTE would otherwise ask
+            # the session bus to beep, which is both noise and a round trip.
+            self.term.set_audible_bell(bool(behavior.get("audible_bell", False)))
+        except Exception:
+            pass
+        try:
+            self.term.set_cell_height_scale(
+                float(self.cfg["font"].get("line_height", 0.0)) or 1.0
+            )
+        except Exception:
+            pass
+        self.set_cursor_mode()
+        self._sync_copy_on_select()
+
+    def _sync_copy_on_select(self) -> None:
+        enabled = bool(self.cfg["behavior"].get("copy_on_select", False))
+        if enabled and not self._selection_id:
+            self._selection_id = self.term.connect("selection-changed", self._on_selection)
+        elif not enabled and self._selection_id:
+            try:
+                self.term.disconnect(self._selection_id)
+            except Exception:
+                pass
+            self._selection_id = 0
+
     def set_cursor_mode(self) -> None:
         behavior = self.cfg["behavior"]
         shape = CURSOR_SHAPES.get(str(behavior.get("cursor_shape", "bar")).lower())

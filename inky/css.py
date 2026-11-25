@@ -189,10 +189,160 @@ headerbar.inky-header button.titlebutton.close:hover {{
 }}
 dialog {{
     background-color: {u['surface']};
+    color: {theme.fg};
+}}
+dialog label {{
+    color: {u['fg_dim']};
 }}
 dialog button {{
     border-radius: 0;
+    border: 1px solid {u['border']};
+    background-image: none;
+    background-color: {u['surface_hi']};
+    color: {theme.fg};
     padding: 4px 12px;
+    box-shadow: none;
+}}
+dialog button:hover {{
+    background-color: {u['surface_hi2']};
+    color: {theme.fg};
+}}
+dialog entry,
+dialog spinbutton,
+dialog combobox button {{
+    background-image: none;
+    background-color: {theme.bg};
+    border: 1px solid {u['border']};
+    border-radius: 0;
+    color: {theme.fg};
+    padding: 2px 6px;
+    box-shadow: none;
+}}
+dialog entry:focus,
+dialog spinbutton:focus {{
+    border-color: {theme.accent};
+}}
+dialog notebook,
+dialog notebook > stack,
+dialog scrolledwindow,
+dialog viewport {{
+    background-color: {u['surface']};
+}}
+dialog notebook header {{
+    background-color: {u['surface']};
+    border-bottom: 1px solid {u['border']};
+}}
+dialog notebook tab {{
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 6px 14px;
+    color: {u['muted']};
+    font-size: {ui_size}pt;
+}}
+dialog notebook tab:hover {{
+    color: {theme.fg};
+}}
+dialog notebook tab:checked {{
+    color: {theme.accent};
+    box-shadow: inset 0 -2px {theme.accent};
+}}
+dialog switch {{
+    background-color: {u['surface_hi']};
+    border: 1px solid {u['border']};
+    border-radius: 12px;
+}}
+dialog switch:checked {{
+    background-color: {theme.accent};
+    border-color: {theme.accent};
+}}
+dialog switch slider {{
+    background-color: {theme.fg};
+    border: none;
+}}
+dialog scale trough {{
+    background-color: {u['surface_hi']};
+    border: none;
+    min-height: 4px;
+}}
+dialog scale highlight {{
+    background-color: {theme.accent};
+}}
+dialog separator {{
+    background-color: {u['border']};
+}}
+
+/* -- theme maker -------------------------------------------------- */
+.maker-section {{
+    font-size: {tiny}pt;
+    font-weight: 700;
+    color: {u['muted']};
+    margin-top: 2px;
+}}
+.maker-label {{
+    font-size: {tiny - 0.6}pt;
+    color: {u['muted']};
+}}
+.maker-swatch {{
+    border-radius: 0;
+    padding: 0;
+    min-height: 22px;
+}}
+.maker-preview {{
+    border: 1px solid {u['border']};
+    background-color: {theme.bg};
+}}
+.maker-status {{
+    font-size: {tiny}pt;
+    color: {u['muted']};
+}}
+.maker-save {{
+    background-color: {theme.accent};
+    color: {u['on_accent']};
+    border: 1px solid {theme.accent};
+    padding: 5px 16px;
+}}
+.maker-save:hover {{
+    background-color: {theme.accent_alt};
+    border-color: {theme.accent_alt};
+}}
+.maker-danger {{
+    color: {u['danger']};
+}}
+
+/* -- settings ----------------------------------------------------- */
+.settings-section {{
+    font-size: {tiny}pt;
+    font-weight: 700;
+    color: {u['muted']};
+}}
+.settings-label {{
+    font-size: {ui_size}pt;
+    color: {theme.fg};
+}}
+.settings-help {{
+    font-size: {tiny}pt;
+    color: {u['muted']};
+}}
+.settings-theme {{
+    font-size: {ui_size + 1.6}pt;
+    color: {theme.accent};
+}}
+.settings-key {{
+    font-family: "{mono}";
+    font-size: {tiny}pt;
+    color: {theme.accent};
+}}
+.font-sample {{
+    font-size: {tiny}pt;
+    color: {u['muted']};
+}}
+.font-badge {{
+    font-size: {tiny - 1.0}pt;
+    color: {theme.accent};
+    border: 1px solid {u['border']};
+    border-radius: 0;
+    padding: 0 5px;
 }}
 
 /* -- status line -------------------------------------------------- */

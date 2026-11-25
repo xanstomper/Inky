@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 import subprocess
 import sys
 import time
@@ -17,6 +18,7 @@ from . import config  # noqa: E402
 from .agents import AgentHit, available_agents, scan  # noqa: E402
 from .composer import Composer  # noqa: E402
 from .css import build_css  # noqa: E402
+from .dialogs import SettingsDialog, ThemeMaker  # noqa: E402
 from .palette import Palette  # noqa: E402
 from .terminal import InkyTerminal  # noqa: E402
 from .theme import Theme, load_themes, pick  # noqa: E402
@@ -219,6 +221,8 @@ class InkyWindow(Gtk.Window):
         self._poll_id = 0
         self._status_tick = 0
         self._closing = False
+        self.zen = False
+        self.show_statusbar = bool(cfg["window"].get("status_bar", False))
 
         self.tmux.ensure_server()
 
@@ -319,8 +323,8 @@ class InkyWindow(Gtk.Window):
         root.pack_start(self.term_overlay, True, True, 0)
         self.statusbar = self._build_statusbar()
         self.show_statusbar = bool(self.cfg["window"].get("status_bar", False))
-        if self.show_statusbar:
-            root.pack_start(self.statusbar, False, False, 0)
+        root.pack_start(self.statusbar, False, False, 0)
+        self.statusbar.set_visible(self.show_statusbar)
 
         overlay = Gtk.Overlay()
         overlay.add(root)
@@ -679,11 +683,145 @@ class InkyWindow(Gtk.Window):
         if existing is not None:
             existing.present()
             return
-        dialog = ThemePicker(self, self.themes, self.theme.slug, self.apply_theme)
+        dialog = ThemePicker(self, self.themes, self.theme.slug, self.apply_theme,
+                             self.open_theme_maker)
         dialog.connect("response", lambda d, _r: d.destroy())
         dialog.connect("destroy", lambda *_: setattr(self, "_theme_picker", None))
         dialog.present()
         self._theme_picker = dialog
+
+    def open_theme_maker(self, slug: str | None = None) -> None:
+        """Colour editor: pick ANSI slots, watch a fake terminal, save to disk."""
+        existing = getattr(self, "_theme_maker", None)
+        if existing is not None:
+            existing.present()
+            return
+        dialog = ThemeMaker(self, self.themes, slug or self.theme.slug,
+                            self._theme_saved, self._theme_deleted)
+        dialog.connect("response", lambda d, _r: d.destroy())
+        dialog.connect("destroy", lambda *_: setattr(self, "_theme_maker", None))
+        dialog.present()
+        self._theme_maker = dialog
+
+    def _reload_themes(self, select: str | None = None) -> None:
+        self.themes = load_themes()
+        picker = getattr(self, "_theme_picker", None)
+        if picker is not None:
+            picker.reload(self.themes, select or self.theme.slug)
+        if select:
+            self.apply_theme(select)
+        else:
+            self.refresh_status()
+
+    def _theme_saved(self, slug: str) -> None:
+        self._reload_themes(slug)
+        self.toast.show_message(f"Theme saved · {slug}")
+
+    def _theme_deleted(self, slug: str) -> None:
+        fallback = "inky" if self.theme.slug == slug else None
+        self._reload_themes(fallback)
+        self.toast.show_message(f"Theme deleted · {slug}")
+
+    def open_settings(self) -> None:
+        """Fonts, contrast, cursor, terminal behaviour and agent extras."""
+        existing = getattr(self, "_settings", None)
+        if existing is not None:
+            existing.present()
+            return
+        dialog = SettingsDialog(self, self.cfg, self.theme, self.themes,
+                                self.apply_settings, self.open_theme_picker,
+                                self.open_theme_maker, self._settings_action)
+        dialog.connect("response", lambda d, _r: d.destroy())
+        dialog.connect("destroy", lambda *_: setattr(self, "_settings", None))
+        dialog.present()
+        self._settings = dialog
+
+    def apply_settings(self) -> None:
+        """Push settings into the live window — no restart, no re-attach."""
+        config.save_config(self.cfg)
+        padding = max(0, int(self.cfg["window"].get("padding", 0)))
+        for side in ("start", "end", "top", "bottom"):
+            getattr(self.term_overlay, f"set_margin_{side}")(padding)
+        self.show_statusbar = bool(self.cfg["window"].get("status_bar", False))
+        self.statusbar.set_visible(self.show_statusbar and not self.zen)
+        try:
+            opacity = float(self.cfg["window"].get("opacity", 1.0))
+            self.set_opacity(max(0.4, min(1.0, opacity)))
+        except Exception:
+            pass
+        self.apply_theme(self.theme.slug, persist=False)
+        for tab in self.tabs:
+            tab.terminal.apply_behavior()
+        self._restart_poll()
+        self.refresh_status()
+
+    def _restart_poll(self) -> None:
+        if self._poll_id:
+            try:
+                GLib.source_remove(self._poll_id)
+            except Exception:
+                pass
+        interval = float(self.cfg["behavior"].get("poll_interval", 1.4))
+        self._poll_id = GLib.timeout_add(max(300, int(interval * 1000)), self._poll)
+
+    def _settings_action(self, kind: str) -> None:
+        if kind == "zen":
+            self.toggle_zen()
+        elif kind == "broadcast":
+            self.broadcast_prompt()
+        elif kind == "shuffle":
+            self.shuffle_theme()
+        elif kind == "folder":
+            self._open_themes_folder()
+
+    def _open_themes_folder(self) -> None:
+        try:
+            config.USER_THEMES.mkdir(parents=True, exist_ok=True)
+            Gtk.show_uri(None, config.USER_THEMES.as_uri(),
+                         Gtk.get_current_event_time())
+        except Exception:
+            try:
+                subprocess.Popen(["xdg-open", str(config.USER_THEMES)],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                self.toast.show_message(str(config.USER_THEMES))
+
+    def toggle_zen(self) -> None:
+        """Strip the chrome, keep the grid. The shortcut still gets you out."""
+        self.zen = not self.zen
+        self.tabrow.set_visible(not self.zen)
+        for widget in (self.new_button, self.search_button, self.theme_button):
+            widget.set_visible(not self.zen)
+        self.statusbar.set_visible(self.show_statusbar and not self.zen)
+        self.toast.show_message(
+            "Zen mode — Ctrl+Shift+Z brings the chrome back" if self.zen
+            else "Chrome restored"
+        )
+
+    def broadcast_prompt(self) -> None:
+        """One prompt, every tab: run the same instruction past several agents."""
+        live = [tab for tab in self.tabs if not tab.closed]
+        if len(live) < 2:
+            self.toast.show_message("Open another tab to broadcast to")
+            return
+        self.composer.open(f"broadcast · {len(live)} tabs", self._send_broadcast)
+
+    def _send_broadcast(self, text: str) -> None:
+        sent = 0
+        for tab in self.tabs:
+            if tab.closed:
+                continue
+            self.tmux.send_text(tab.session, text, submit=True)
+            sent += 1
+        self._focus_terminal()
+        self.toast.show_message(f"Prompt sent to {sent} tabs")
+
+    def shuffle_theme(self) -> None:
+        choices = [slug for slug in self.themes if slug != self.theme.slug]
+        if not choices:
+            return
+        self.apply_theme(random.choice(choices))
+        self.toast.show_message(f"Theme · {self.theme.name}")
 
     def open_main_menu(self) -> None:
         menu = Gtk.Menu()
@@ -692,6 +830,13 @@ class InkyWindow(Gtk.Window):
         menu.append(self._menu_item("Detach tab    ⌃⇧D", self.detach_tab))
         menu.append(Gtk.SeparatorMenuItem())
         menu.append(self.theme_menu_item())
+        menu.append(self._menu_item("Theme maker…    ⌃⇧M", self.open_theme_maker))
+        menu.append(self._menu_item("Settings…    ⌃,", self.open_settings))
+        menu.append(Gtk.SeparatorMenuItem())
+        menu.append(self._menu_item("Broadcast prompt to all tabs    ⌃⇧B",
+                                    self.broadcast_prompt))
+        menu.append(self._menu_item("Zen mode    ⌃⇧Z", self.toggle_zen))
+        menu.append(self._menu_item("Shuffle theme", self.shuffle_theme))
         menu.append(Gtk.SeparatorMenuItem())
         menu.append(self._menu_item("Duplicate tab", self.duplicate_tab))
         menu.append(self._menu_item("Rename tab    F2", self.rename_tab))
@@ -813,6 +958,16 @@ class InkyWindow(Gtk.Window):
                "⌃⇧D", "⧉", lambda: self.detach_tab())
         action("Compose prompt", "multi-line prompt, sent as one paste", "⌃⇧⏎", "✎",
                self.open_composer)
+        action("Broadcast prompt", "send one prompt to every open tab", "⌃⇧B", "⇉",
+               self.broadcast_prompt)
+        action("Theme maker", "build a palette with a live terminal preview", "⌃⇧M", "◑",
+               self.open_theme_maker)
+        action("Settings", "fonts, contrast, cursor, agent notifications", "⌃,", "⚙",
+               self.open_settings)
+        action("Zen mode", "hide the chrome, keep the grid", "⌃⇧Z", "◇",
+               self.toggle_zen)
+        action("Shuffle theme", "roll a random palette", "", "⤨",
+               self.shuffle_theme)
         action("Launch agent", "pick an AI coding agent", "⌃⇧A", "✳",
                self.open_agent_palette)
         action("Export transcript", "save this tab's scrollback as markdown", "⌃⇧S", "⭳",
@@ -921,6 +1076,12 @@ class InkyWindow(Gtk.Window):
         for tab in self.tabs:
             tab.terminal.apply_theme(theme)
             tab._visual_key = None
+        self.theme_button.set_tooltip_text(
+            f"Themes  (Ctrl+Shift+P)  ·  {len(self.themes)} available"
+        )
+        settings = getattr(self, "_settings", None)
+        if settings is not None:
+            settings.set_theme(theme)
         self.refresh_status()
 
     def cycle_theme(self, delta: int = 1) -> None:
@@ -1259,6 +1420,15 @@ class InkyWindow(Gtk.Window):
             if low == "p":
                 self.open_theme_picker()
                 return True
+            if low == "m":
+                self.open_theme_maker()
+                return True
+            if low == "z":
+                self.toggle_zen()
+                return True
+            if low == "b":
+                self.broadcast_prompt()
+                return True
             if low == "f":
                 self.open_search()
                 return True
@@ -1300,6 +1470,10 @@ class InkyWindow(Gtk.Window):
                     tab.terminal.apply_font()
                 return True
 
+        if ctrl and key in ("comma", "less"):
+            self.open_settings()
+            return True
+
         if alt and low.isdigit():
             index = int(low) - 1
             if 0 <= index < len(self.tabs):
@@ -1312,5 +1486,8 @@ class InkyWindow(Gtk.Window):
         if key == "Escape":
             if self.palette.is_open():
                 self.palette.close()
+                return True
+            if self.zen:
+                self.toggle_zen()
                 return True
         return False

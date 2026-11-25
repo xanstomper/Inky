@@ -203,13 +203,30 @@ def _selftest() -> int:
         order_ok = ([tab.session for tab in window.tabs] == before[1:2] + before[:1] + before[2:])
         window.move_tab(window.tabs[1], -1)
         order_ok = order_ok and [tab.session for tab in window.tabs] == before
+
+        # Settings and the theme maker must build against a live window, and the
+        # maker must offer a complete 16-slot palette.
+        from .dialogs import SettingsDialog, ThemeMaker
+
+        settings = SettingsDialog(window, window.cfg, window.theme, window.themes)
+        maker = ThemeMaker(window, window.themes, window.theme.slug)
+        palette_ok = len(maker._collect()["palette"]) == 16
+        dialogs_ok = settings.notebook.get_n_pages() == 3 and palette_ok
+        settings.destroy()
+        maker.destroy()
+        window.toggle_zen()
+        zen_ok = not window.tabrow.get_visible()
+        window.toggle_zen()
+        zen_ok = zen_ok and window.tabrow.get_visible()
+
         result["ok"] = (len(window.tabs) >= 3 and alive and transcript_ok
-                        and len(themes) >= 5 and naming_ok and order_ok)
+                        and len(themes) >= 5 and naming_ok and order_ok
+                        and dialogs_ok and zen_ok)
         print(
             f"SELFTEST {'OK' if result['ok'] else 'FAILED'} "
             f"tabs={len(window.tabs)} themes={len(themes)} alive={alive} "
             f"transcript={transcript_ok} naming={naming_ok} order={order_ok} "
-            f"titles={named}"
+            f"dialogs={dialogs_ok} zen={zen_ok} titles={named}"
         )
         tmux = Tmux()
         for tab in window.tabs:

@@ -44,10 +44,12 @@ class Toast(Gtk.Revealer):
 class ThemePicker(Gtk.Dialog):
     """Theme chooser: search, click once, the window recolours immediately."""
 
-    def __init__(self, parent, themes: dict, current: str, on_pick) -> None:
+    def __init__(self, parent, themes: dict, current: str, on_pick,
+                 on_make=None) -> None:
         super().__init__(title="Themes", transient_for=parent, modal=False)
         self.themes = themes
         self.on_pick = on_pick
+        self.on_make = on_make
         self._rows: dict[str, Gtk.ListBoxRow] = {}
         self._marks: dict[str, Gtk.Label] = {}
         self._ready = False
@@ -96,6 +98,10 @@ class ThemePicker(Gtk.Dialog):
         close = Gtk.Button(label="Close")
         close.connect("clicked", lambda *_: self.response(Gtk.ResponseType.CLOSE))
         foot.pack_end(close, False, False, 0)
+        if callable(on_make):
+            make = Gtk.Button(label="Theme maker…")
+            make.connect("clicked", lambda *_: on_make())
+            foot.pack_end(make, False, False, 6)
         self.get_content_area().pack_start(foot, False, False, 0)
 
         self.show_all()
@@ -214,6 +220,25 @@ class ThemePicker(Gtk.Dialog):
     def _sync_marks(self, active: str) -> None:
         for slug, mark in self._marks.items():
             mark.set_text("●" if slug == active else "")
+
+    def reload(self, themes: dict, current: str) -> None:
+        """Rebuild the list after a theme was saved, imported or deleted."""
+        self.themes = themes
+        for child in list(self.listbox.get_children()):
+            self.listbox.remove(child)
+        self._rows.clear()
+        self._marks.clear()
+        for slug, theme in themes.items():
+            row = self._row(slug, theme, slug == current)
+            self.listbox.add(row)
+            self._rows[slug] = row
+        self.entry.set_placeholder_text(
+            f"Search {len(themes)} themes — click one to apply it live"
+        )
+        self.count.set_text(str(len(themes)))
+        self.listbox.invalidate_filter()
+        self.listbox.show_all()
+        self._sync_marks(current)
 
 
 class SearchBar(Gtk.Revealer):
